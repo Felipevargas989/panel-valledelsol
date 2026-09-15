@@ -1,0 +1,293 @@
+/* ─────────────────────────────────────────────────────────────
+   SISTEMA VISUAL DEL PANEL
+   Tomado del tablero que pasó Felipe: banda azul arriba, fondo gris
+   azulado, tarjetas blancas, tarjetas de indicador de colores y tabla
+   con celdas teñidas.
+
+   Regla propia: el color significa algo.
+     · Los canales tienen color fijo — Google siempre azul, Meta siempre
+       naranja. Nunca cambian aunque cambie el filtro.
+     · Las tarjetas de indicador se pintan por familia: volumen, costo,
+       eficiencia.
+     · Verde y rojo quedan reservados para «mejoró» y «empeoró». No se
+       usan para ningún canal.
+
+   Es un diseño claro a propósito, como el referente. Todos los colores
+   se pintan explícitos para que no dependa del tema del navegador.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light;
+
+  --fondo: #eef2f9;
+  --tarjeta: #ffffff;
+  --tarjeta2: #f7f9fd;
+  --borde: #dde5f2;
+  --borde2: #c9d5e8;
+
+  --tinta: #101a2e;
+  --tinta2: #566280;
+  --tinta3: #8892aa;
+
+  --banda-a: #16306e;
+  --banda-b: #2050b8;
+
+  /* canales — validados con el medidor de contraste */
+  --google: #1d4ed8;
+  --meta: #c2410c;
+  --sitio: #0d9488;
+  --otro: #7e22ce;
+
+  /* familias de indicador */
+  --fam-volumen: #1e3a8a;
+  --fam-costo: #6b21a8;
+  --fam-eficiencia: #0f766e;
+
+  /* estado */
+  --bien: #15803d;
+  --mal: #b91c1c;
+  --ojo: #b45309;
+  --bien-suave: #e8f5ec;
+  --mal-suave: #fdeaea;
+  --ojo-suave: #fdf3e3;
+
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --r: 10px;
+  --r-g: 14px;
+  --sombra: 0 1px 2px rgba(16, 26, 46, .06), 0 1px 3px rgba(16, 26, 46, .04);
+}
+
+* { box-sizing: border-box; }
+
+html, body { padding: 0; margin: 0; }
+
+body {
+  background: var(--fondo);
+  color: var(--tinta);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+/* ── Banda superior ─────────────────────────────────────── */
+.banda {
+  background: linear-gradient(100deg, var(--banda-a), var(--banda-b));
+  color: #fff;
+  padding: 0 0 46px;
+}
+.banda-in {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 18px 24px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.marca { display: flex; align-items: center; gap: 12px; }
+.marca-icono {
+  width: 34px; height: 34px; border-radius: 9px;
+  background: rgba(255, 255, 255, .16);
+  display: grid; place-items: center;
+  font-size: 17px;
+}
+.marca h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.marca p { margin: 1px 0 0; font-size: 12.5px; color: rgba(255, 255, 255, .72); }
+
+.banda-dcha { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sello {
+  font-size: 11.5px; padding: 5px 11px; border-radius: 99px;
+  background: rgba(255, 255, 255, .14); color: rgba(255, 255, 255, .92);
+  border: 1px solid rgba(255, 255, 255, .16);
+}
+
+/* pestañas de vista */
+.vistas { display: flex; gap: 4px; margin-top: 16px; }
+.vista {
+  padding: 9px 16px; border-radius: 9px 9px 0 0; font-size: 13.5px; font-weight: 500;
+  color: rgba(255, 255, 255, .78); text-decoration: none; border: 0; background: transparent;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+}
+.vista:hover { background: rgba(255, 255, 255, .1); color: #fff; }
+.vista[aria-current="page"] { background: var(--fondo); color: var(--tinta); font-weight: 600; }
+
+/* ── Cuerpo ─────────────────────────────────────────────── */
+.cuerpo { max-width: 1400px; margin: -34px auto 0; padding: 0 24px 72px; position: relative; }
+.pila { display: flex; flex-direction: column; gap: 20px; }
+
+h2.titulo { font-size: 16px; font-weight: 600; margin: 0 0 2px; letter-spacing: -.005em; }
+p.bajada { font-size: 13px; color: var(--tinta2); margin: 0 0 12px; max-width: 78ch; }
+.encabezado-seccion { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+.periodo-chico { font-size: 11.5px; color: var(--tinta3); font-weight: 500; }
+
+/* ── Filtros ────────────────────────────────────────────── */
+.filtros {
+  background: var(--tarjeta); border: 1px solid var(--borde); border-radius: var(--r-g);
+  padding: 12px 14px; box-shadow: var(--sombra);
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;
+}
+.campo { display: flex; flex-direction: column; gap: 5px; }
+.campo > label { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--tinta3); }
+select, input[type="date"] {
+  font-family: var(--sans); font-size: 13.5px; color: var(--tinta);
+  background: var(--tarjeta); border: 1px solid var(--borde2); border-radius: var(--r);
+  padding: 8px 10px; min-height: 36px;
+}
+select:focus-visible, input:focus-visible, button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--google); outline-offset: 2px;
+}
+.atajos { display: flex; gap: 6px; flex-wrap: wrap; }
+.atajo {
+  font-family: var(--sans); font-size: 13px; padding: 8px 12px; min-height: 36px;
+  border: 1px solid var(--borde2); border-radius: var(--r); background: var(--tarjeta);
+  color: var(--tinta2); cursor: pointer; white-space: nowrap;
+}
+.atajo:hover { background: var(--tarjeta2); color: var(--tinta); }
+.atajo[aria-pressed="true"] { background: var(--banda-a); border-color: var(--banda-a); color: #fff; font-weight: 500; }
+.comparado { margin-left: auto; font-size: 12.5px; color: var(--tinta2); align-self: center; }
+
+/* ── Tarjetas de indicador ──────────────────────────────── */
+/* Seis indicadores caben en una fila en pantalla ancha; se parten de tres en
+   tres y de dos en dos al angostarse, nunca dejando uno solo al final. */
+.indicadores { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+@media (max-width: 1180px) { .indicadores { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 620px) { .indicadores { grid-template-columns: repeat(2, 1fr); } }
+.kpi {
+  border-radius: var(--r-g); padding: 15px 16px; color: #fff; min-height: 104px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  box-shadow: var(--sombra);
+}
+.kpi.volumen { background: var(--fam-volumen); }
+.kpi.costo { background: var(--fam-costo); }
+.kpi.eficiencia { background: var(--fam-eficiencia); }
+.kpi .rotulo { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: rgba(255, 255, 255, .78); }
+.kpi .cifra { font-family: var(--mono); font-size: 26px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 8px; }
+.kpi .pie { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11.5px; color: rgba(255, 255, 255, .78); flex-wrap: wrap; }
+.kpi .delta {
+  font-family: var(--mono); font-weight: 600; padding: 2px 7px; border-radius: 99px;
+  font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; font-size: 11.5px;
+}
+.kpi .delta.sube { background: rgba(255, 255, 255, .2); color: #fff; }
+.kpi .delta.baja { background: rgba(0, 0, 0, .22); color: #fff; }
+.kpi .delta.igual { background: rgba(255, 255, 255, .14); color: rgba(255, 255, 255, .85); }
+
+/* ── Tarjetas ───────────────────────────────────────────── */
+.tarjeta {
+  background: var(--tarjeta); border: 1px solid var(--borde); border-radius: var(--r-g);
+  padding: 16px 18px; box-shadow: var(--sombra);
+}
+.tarjeta > h3 {
+  margin: 0 0 14px; font-size: 13px; font-weight: 600; color: var(--tinta);
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.tarjeta > h3 small { font-weight: 500; color: var(--tinta3); font-size: 11.5px; }
+.tarjeta .nota { margin: 12px 0 0; font-size: 12.5px; color: var(--tinta2); }
+.rejilla { display: grid; gap: 14px; }
+.rejilla.dos { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+.rejilla.tres { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+
+/* ── Leyenda ────────────────────────────────────────────── */
+.leyenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--tinta2); }
+.leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+.leyenda i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* ── Tabla ──────────────────────────────────────────────── */
+.tabla-marco { overflow-x: auto; border: 1px solid var(--borde); border-radius: var(--r-g); background: var(--tarjeta); box-shadow: var(--sombra); }
+table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 900px; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--borde); }
+th {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--tinta2); background: var(--tarjeta2); position: sticky; top: 0; z-index: 1;
+}
+th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--tarjeta); z-index: 2; }
+th:first-child { background: var(--tarjeta2); z-index: 3; }
+td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+tbody tr:last-child td { border-bottom: 0; }
+tfoot td { background: var(--tarjeta2); font-weight: 600; border-top: 2px solid var(--borde2); border-bottom: 0; }
+tfoot td:first-child { background: var(--tarjeta2); }
+.chip-canal { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.chip-canal i { width: 8px; height: 8px; border-radius: 99px; flex: none; }
+
+/* variación dentro de tabla */
+.var { font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.var.bueno { color: var(--bien); }
+.var.malo { color: var(--mal); }
+.var.neutro { color: var(--tinta3); }
+
+/* ── Barras horizontales ────────────────────────────────── */
+.barras { display: flex; flex-direction: column; gap: 3px; }
+.barra { display: grid; grid-template-columns: minmax(84px, 128px) 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+.barra .et { color: var(--tinta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barra .riel { height: 20px; background: var(--tarjeta2); border-radius: 5px; overflow: hidden; }
+.barra .riel i { display: block; height: 100%; border-radius: 5px; min-width: 3px; background: var(--google); }
+.barra .val { font-family: var(--mono); font-size: 12px; color: var(--tinta2); font-variant-numeric: tabular-nums; }
+
+/* ── Estado ─────────────────────────────────────────────── */
+.salud-fila { display: flex; gap: 14px; align-items: flex-start; padding: 11px 0; border-bottom: 1px solid var(--borde); }
+.salud-fila:last-child { border-bottom: 0; }
+.salud-fila .txt { flex: 1; }
+.salud-fila .txt b { display: block; font-weight: 600; font-size: 13.5px; }
+.salud-fila .txt span { color: var(--tinta2); font-size: 12.5px; }
+.marca-estado { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 99px; white-space: nowrap; }
+.marca-estado.bien { background: var(--bien-suave); color: var(--bien); }
+.marca-estado.vigilar { background: var(--ojo-suave); color: var(--ojo); }
+.marca-estado.falta { background: var(--mal-suave); color: var(--mal); }
+
+/* ── Avisos ─────────────────────────────────────────────── */
+.aviso { border-radius: var(--r-g); padding: 13px 16px; font-size: 13px; border: 1px solid; }
+.aviso.ojo { background: var(--ojo-suave); border-color: #f0d5a8; color: #7c4a08; }
+.aviso.info { background: #eaf1fe; border-color: #cbdcfb; color: #1a3a7a; }
+.aviso b { font-weight: 600; }
+
+/* ── Lista de tareas ────────────────────────────────────── */
+ul.tareas { list-style: none; margin: 0; padding: 0; }
+ul.tareas li { padding: 10px 0; border-bottom: 1px solid var(--borde); display: flex; gap: 11px; align-items: flex-start; }
+ul.tareas li:last-child { border-bottom: 0; }
+ul.tareas .num {
+  width: 21px; height: 21px; border-radius: 99px; background: var(--tarjeta2);
+  border: 1px solid var(--borde2); color: var(--tinta2); font-size: 11px; font-weight: 600;
+  display: grid; place-items: center; flex: none; margin-top: 1px; font-family: var(--mono);
+}
+ul.tareas b { display: block; font-weight: 500; font-size: 13.5px; }
+ul.tareas small { color: var(--tinta2); font-size: 12.5px; }
+
+/* ── Inventario de fuentes ──────────────────────────────── */
+.campo-fuente { display: flex; align-items: center; gap: 9px; padding: 6px 0; font-size: 13px; border-bottom: 1px dotted var(--borde); }
+.campo-fuente:last-child { border-bottom: 0; }
+.campo-fuente .est { width: 8px; height: 8px; border-radius: 99px; flex: none; }
+.campo-fuente .est.medido { background: var(--bien); }
+.campo-fuente .est.disponible { background: var(--ojo); }
+.campo-fuente .est.pendiente { background: var(--tinta3); }
+.campo-fuente em { font-style: normal; color: var(--tinta3); font-size: 12px; }
+
+/* ── Entrar ─────────────────────────────────────────────── */
+.entrar-fondo { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: linear-gradient(140deg, var(--banda-a), var(--banda-b)); }
+.entrar-caja { background: var(--tarjeta); border-radius: 16px; padding: 30px; width: min(380px, 100%); box-shadow: 0 16px 40px rgba(6, 18, 48, .28); }
+.entrar-caja h1 { margin: 0 0 4px; font-size: 19px; }
+.entrar-caja p { margin: 0 0 20px; color: var(--tinta2); font-size: 13px; }
+.entrar-caja input[type="password"] {
+  width: 100%; font-family: var(--sans); font-size: 14px; padding: 10px 12px;
+  border: 1px solid var(--borde2); border-radius: var(--r); background: var(--tarjeta); color: var(--tinta);
+}
+.entrar-caja button {
+  width: 100%; margin-top: 10px; padding: 11px; border: 0; border-radius: var(--r);
+  background: var(--banda-b); color: #fff; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.entrar-caja button:hover { background: var(--banda-a); }
+.entrar-error { margin-top: 10px; color: var(--mal); font-size: 12.5px; }
+
+.pie-pagina { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--borde); color: var(--tinta3); font-size: 12px; }
+
+@media (max-width: 640px) {
+  .cuerpo { padding: 0 14px 56px; }
+  .banda-in { padding: 14px 14px 0; }
+  .vistas { overflow-x: auto; }
+  .kpi .cifra { font-size: 22px; }
+  .barra { grid-template-columns: minmax(74px, 100px) 1fr auto; }
+}
