@@ -124,7 +124,7 @@ export function periodoAnterior(desde: string, hasta: string) {
   return { desde: sumarDias(desde, -largo), hasta: sumarDias(desde, -1) };
 }
 
-export type Variacion = { valor: number; bueno: boolean } | null;
+export type Variacion = { valor: number; bueno: boolean; neutro?: boolean } | null;
 
 /** `menosEsMejor` invierte el juicio: en costos, bajar es buena noticia. */
 export function variacion(
@@ -136,6 +136,14 @@ export function variacion(
   const r = (actual - anterior) / anterior;
   if (Math.abs(r) < 0.005) return { valor: 0, bueno: true };
   return { valor: r, bueno: menosEsMejor ? r < 0 : r > 0 };
+}
+
+/** Para lo que no es ni bueno ni malo por sí solo, como la inversión:
+ *  gastar más puede ser una buena decisión o un problema. Se muestra el
+ *  cambio sin pintarlo de verde ni de rojo. */
+export function variacionNeutra(actual: number, anterior: number): Variacion {
+  const v = variacion(actual, anterior);
+  return v ? { ...v, neutro: true } : null;
 }
 
 // ── Series por día, rellenando los días sin datos ────────────

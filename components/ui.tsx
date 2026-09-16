@@ -28,7 +28,7 @@ export function Kpi({
             variacion.valor === 0 ? (
               <span className="delta igual">sin cambio</span>
             ) : (
-              <span className={`delta ${variacion.bueno ? "sube" : "baja"}`}>
+              <span className={`delta ${variacion.neutro ? "igual" : variacion.bueno ? "sube" : "baja"}`}>
                 {variacion.valor > 0 ? "▲" : "▼"}&nbsp;{Math.abs(Math.round(variacion.valor * 100))}&nbsp;%
               </span>
             )
@@ -47,7 +47,7 @@ export function Var({ v }: { v: Variacion }) {
   if (!v) return <span className="var neutro">—</span>;
   if (v.valor === 0) return <span className="var neutro">=</span>;
   return (
-    <span className={`var ${v.bueno ? "bueno" : "malo"}`}>
+    <span className={`var ${v.neutro ? "neutro" : v.bueno ? "bueno" : "malo"}`}>
       {v.valor > 0 ? "▲" : "▼"} {Math.abs(Math.round(v.valor * 100))} %
     </span>
   );

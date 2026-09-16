@@ -4,7 +4,7 @@ import { BarrasDia, LineaDia, ParDeGraficos } from "../../../components/graficos
 import { Kpi, Var, Seccion, Tarjeta, ChipCanal, Leyenda } from "../../../components/ui";
 import { RANGO_DATOS, SUPUESTOS } from "../../../lib/datos";
 import {
-  enRango, resumir, periodoAnterior, variacion, serieDiaria, porCampana, porCanal,
+  enRango, resumir, periodoAnterior, variacion, variacionNeutra, serieDiaria, porCampana, porCanal,
   plata, numero, porcentaje, veces, sumarDias, fechaLarga, NOMBRE_CANAL,
 } from "../../../lib/calculos";
 
@@ -54,7 +54,7 @@ export default async function Dinero({
       >
         <div className="indicadores">
           <Kpi rotulo="Inversión" familia="costo" valor={plata(hoy.inversion)}
-               variacion={variacion(hoy.inversion, antes.inversion)} />
+               variacion={variacionNeutra(hoy.inversion, antes.inversion)} />
           <Kpi rotulo="Impresiones" familia="volumen" valor={numero(hoy.impresiones)}
                variacion={variacion(hoy.impresiones, antes.impresiones)} />
           <Kpi rotulo="Clics" familia="volumen" valor={numero(hoy.clics)}
@@ -139,7 +139,7 @@ export default async function Dinero({
                     <td className="n" style={{ background: tinte(parte, "29,78,216") }}>
                       {plata(c.inversion)}
                     </td>
-                    <td><Var v={a ? variacion(c.inversion, a.inversion) : null} /></td>
+                    <td><Var v={a ? variacionNeutra(c.inversion, a.inversion) : null} /></td>
                     <td className="n">{numero(c.impresiones)}</td>
                     <td className="n">{numero(c.clics)}</td>
                     <td><Var v={a ? variacion(c.clics, a.clics) : null} /></td>
@@ -157,7 +157,7 @@ export default async function Dinero({
                 <td>Total</td>
                 <td></td>
                 <td className="n">{plata(hoy.inversion)}</td>
-                <td><Var v={variacion(hoy.inversion, antes.inversion)} /></td>
+                <td><Var v={variacionNeutra(hoy.inversion, antes.inversion)} /></td>
                 <td className="n">{numero(hoy.impresiones)}</td>
                 <td className="n">{numero(hoy.clics)}</td>
                 <td><Var v={variacion(hoy.clics, antes.clics)} /></td>

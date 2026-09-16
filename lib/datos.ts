@@ -59,7 +59,8 @@ const META: Array<[string, number, number, number, number, number | null]> = [
   ["2026-09-12", 600, 791, 17, 1644, 2],
   ["2026-09-13", 873, 1261, 43, 3846, 4],
   ["2026-09-14", 831, 1148, 46, 3121, 5],
-  ["2026-09-15", 374, 503, 10, 1556, null], // día en curso al momento de medir
+  // El 15-09 no va: al medir estaba a medio día, con gasto contado pero sin
+  // conversaciones cerradas, y eso inflaba el costo por lead un 81 %.
 ];
 
 // ───────────────────────────────────────────────────────────
@@ -96,7 +97,7 @@ export const DIAS: DiaCampana[] = [
   })),
 ];
 
-export const RANGO_DATOS = { desde: "2026-08-16", hasta: "2026-09-15" };
+export const RANGO_DATOS = { desde: "2026-08-16", hasta: "2026-09-14" }; // último día cerrado
 
 // ───────────────────────────────────────────────────────────
 // RADIOGRAFÍA DEL PÚBLICO
