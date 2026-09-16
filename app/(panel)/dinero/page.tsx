@@ -8,20 +8,37 @@ import {
   plata, numero, porcentaje, veces, sumarDias, fechaLarga, hoyEnChile, NOMBRE_CANAL,
 } from "../../../lib/calculos";
 import { ga4Conectado, googleAdsDias, explicarError } from "../../../lib/ga4";
+import { metaConectado, metaDias, explicarErrorMeta } from "../../../lib/meta";
 
 export const dynamic = "force-dynamic";
 
-/** Meta sale de la carga manual; Google Ads, en vivo desde Analytics. Si
- *  Analytics no responde, Google vuelve a la carga manual y se avisa. */
+/** Meta se lee de su API y Google Ads desde Analytics. Si alguna no está
+ *  conectada o no responde, esa parte vuelve a la carga manual y se avisa. */
 async function filasDelPeriodo(desde: string, hasta: string) {
   const manual = enRango(desde, hasta);
-  if (!ga4Conectado()) return { filas: manual, googleEnVivo: false, error: null as string | null };
-  try {
-    const google: DiaCampana[] = await googleAdsDias(desde, hasta);
-    return { filas: [...manual.filter((f) => f.canal === "meta"), ...google], googleEnVivo: true, error: null };
-  } catch (e) {
-    return { filas: manual, googleEnVivo: false, error: explicarError(e) };
-  }
+
+  const meta = metaConectado()
+    ? metaDias(desde, hasta).then(
+        (filas) => ({ filas, enVivo: true, error: null as string | null }),
+        (e) => ({ filas: manual.filter((f) => f.canal === "meta"), enVivo: false, error: explicarErrorMeta(e) }),
+      )
+    : Promise.resolve({ filas: manual.filter((f) => f.canal === "meta"), enVivo: false, error: null });
+
+  const google = ga4Conectado()
+    ? googleAdsDias(desde, hasta).then(
+        (filas: DiaCampana[]) => ({ filas, enVivo: true, error: null as string | null }),
+        (e) => ({ filas: manual.filter((f) => f.canal === "google"), enVivo: false, error: explicarError(e) }),
+      )
+    : Promise.resolve({ filas: manual.filter((f) => f.canal === "google"), enVivo: false, error: null });
+
+  const [m, g] = await Promise.all([meta, google]);
+  return {
+    filas: [...m.filas, ...g.filas],
+    metaEnVivo: m.enVivo,
+    googleEnVivo: g.enVivo,
+    errorMeta: m.error,
+    errorGoogle: g.error,
+  };
 }
 
 export default async function Dinero({
@@ -29,9 +46,9 @@ export default async function Dinero({
 }: {
   searchParams: Promise<{ desde?: string; hasta?: string }>;
 }) {
-  // Con Google en vivo el período llega hasta ayer (el día de hoy aún no
-  // cierra); sin conexión, hasta el último día cargado a mano.
-  const conectado = ga4Conectado();
+  // Con alguna fuente en vivo el período llega hasta ayer (el día de hoy aún
+  // no cierra); sin conexión, hasta el último día cargado a mano.
+  const conectado = ga4Conectado() || metaConectado();
   const tope = conectado ? sumarDias(hoyEnChile(), -1) : RANGO_DATOS.hasta;
   const sp = await searchParams;
   const hasta = sp.hasta && sp.hasta <= hoyEnChile() ? sp.hasta : tope;
@@ -45,7 +62,12 @@ export default async function Dinero({
   const filas = ahora.filas;
   const hoy = resumir(filas);
   const antes = resumir(antesDe.filas);
-  const metaIncompleto = ahora.googleEnVivo && hasta > ULTIMO_DIA_META;
+  const metaIncompleto = !ahora.metaEnVivo && conectado && hasta > ULTIMO_DIA_META;
+  // Las conversaciones de Paseos o Matrimonios entran al retorno con el cierre
+  // de eventos, que está medido sobre cotizaciones y no sobre conversaciones.
+  const conversacionesEventosMeta = filas
+    .filter((f) => f.canal === "meta" && !/caba/i.test(f.campana))
+    .reduce((a, f) => a + (f.leads ?? 0), 0);
 
   const gastoDia = serieDiaria(filas, desde, hasta, "inversion");
   const imprDia = serieDiaria(filas, desde, hasta, "impresiones");
@@ -60,22 +82,27 @@ export default async function Dinero({
   return (
     <div className="pila">
       <Suspense fallback={<div className="filtros" style={{ minHeight: 62 }} />}>
-        <FiltroFechas desde={desde} hasta={hasta} min={RANGO_DATOS.desde}
+        <FiltroFechas desde={desde} hasta={hasta} min={conectado ? "2026-01-01" : RANGO_DATOS.desde}
                       max={conectado ? hoyEnChile() : RANGO_DATOS.hasta} />
       </Suspense>
 
-      {ahora.error ? (
+      {ahora.errorMeta ? (
         <div className="aviso ojo">
-          <b>Google Ads no se pudo leer en vivo; se muestra la carga manual.</b> {ahora.error}
+          <b>Meta no se pudo leer en vivo; se muestra la carga manual.</b> {ahora.errorMeta}
+        </div>
+      ) : null}
+
+      {ahora.errorGoogle ? (
+        <div className="aviso ojo">
+          <b>Google Ads no se pudo leer en vivo; se muestra la carga manual.</b> {ahora.errorGoogle}
         </div>
       ) : null}
 
       {metaIncompleto ? (
         <div className="aviso info">
-          <b>Google Ads está en vivo hasta ayer. Meta todavía se carga a mano y llega solo hasta el{" "}
-          {fechaLarga(ULTIMO_DIA_META)}.</b> Después de esa fecha no hay datos de Meta en este período (no
-          significa que haya gastado cero), así que los totales y la comparación contra el período anterior
-          quedan cortos hasta que conectemos Meta.
+          <b>Meta está cargado a mano y llega solo hasta el {fechaLarga(ULTIMO_DIA_META)}.</b> Después de esa
+          fecha no hay datos de Meta en este período (no significa que haya gastado cero), así que los totales y
+          la comparación contra el período anterior quedan cortos.
         </div>
       ) : null}
 
@@ -250,6 +277,13 @@ export default async function Dinero({
           de partida sin confirmar: no sabemos cuántas conversaciones de WhatsApp terminan en una estadía real.
           Hasta que conectemos Eventia, este número sirve para comparar semanas entre sí, no para decir
           cuánta plata entró.
+          {conversacionesEventosMeta > 0 ? (
+            <>
+              {" "}Además, {numero(conversacionesEventosMeta)} conversaciones de WhatsApp de las campañas de eventos
+              de Meta entran con el cierre de eventos, que está medido sobre cotizaciones y no sobre
+              conversaciones: por ese lado el ingreso estimado sale inflado.
+            </>
+          ) : null}
         </div>
         <div className="rejilla tres">
           <Tarjeta titulo="Si los supuestos fueran ciertos">
@@ -304,11 +338,13 @@ export default async function Dinero({
 
       <p className="pie-pagina">
         Período mostrado: {fechaLarga(desde)} – {fechaLarga(hasta)}.{" "}
+        {ahora.metaEnVivo
+          ? "Meta en vivo desde su API, refrescado cada hora."
+          : `Meta cargado a mano hasta el ${fechaLarga(ULTIMO_DIA_META)}.`}{" "}
         {ahora.googleEnVivo
           ? "Google Ads en vivo desde Analytics, refrescado cada hora."
           : "Google Ads cargado a mano."}{" "}
-        Meta cargado a mano hasta el {fechaLarga(ULTIMO_DIA_META)}. Las campañas actuales de Google partieron el
-        14 de septiembre.
+        Las campañas actuales de Google partieron el 14 de septiembre.
       </p>
     </div>
   );

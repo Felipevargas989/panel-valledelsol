@@ -2,6 +2,7 @@ import { Seccion, Tarjeta } from "../../../components/ui";
 import { SALUD, TAREAS } from "../../../lib/datos";
 import { FUENTES, LO_QUE_FALTA } from "../../../lib/fuentes";
 import { ga4Conectado } from "../../../lib/ga4";
+import { metaConectado } from "../../../lib/meta";
 
 // Se arma en cada visita: muestra si Analytics está conectado en este momento.
 export const dynamic = "force-dynamic";
@@ -15,10 +16,22 @@ const ETIQUETA_CAMPO = {
 
 export default function Medicion() {
   const enVivo = ga4Conectado();
+  const conMeta = metaConectado();
   // Google Ads se lee a través de Analytics, así que cae con la misma llave.
-  const conectadas: Record<string, string> = enVivo
-    ? { ga4: "● Conectado en vivo", google: "● En vivo vía Analytics" }
-    : {};
+  const conectadas: Record<string, string> = {
+    ...(enVivo ? { ga4: "● Conectado en vivo", google: "● En vivo vía Analytics" } : {}),
+    ...(conMeta ? { meta: "● Conectado en vivo" } : {}),
+  };
+  const PASOS = [
+    { que: "Analytics", listo: enVivo,
+      como: "El día a día del sitio, de dónde llega la gente, qué páginas mira y quién está conectado ahora." },
+    { que: "Google Ads", listo: enVivo,
+      como: "Se lee a través de Analytics, que está vinculado con la cuenta: sin token de desarrollador. Los términos de búsqueda siguen a mano." },
+    { que: "Meta", listo: conMeta,
+      como: "Un usuario del sistema con permiso de solo mirar. Trae gasto, conversaciones y la radiografía del público de todas las campañas." },
+    { que: "Eventia", listo: false,
+      como: "Es tu propia base. Acá el trabajo no es técnico sino decidir qué mostrar. Esto es lo que convierte el ingreso estimado en plata contada." },
+  ];
   return (
     <div className="pila">
       <Seccion
@@ -90,40 +103,21 @@ export default function Medicion() {
       </Seccion>
 
       <Seccion
-        titulo="Cómo se conecta esto de verdad"
-        bajada="El orden en que conviene hacerlo, de lo más fácil a lo más lento."
+        titulo="Qué está conectado"
+        bajada="Las cuatro fuentes del panel y en qué va cada una."
       >
         <Tarjeta>
-          <ul className="tareas">
-            <li>
-              <span className="num">1</span>
-              <span>
-                <b>Analytics</b>
-                <small>Gratis y sin trámite. Da el día a día del sitio, de dónde llega la gente y qué páginas mira. Un día de trabajo.</small>
+          {PASOS.map((p) => (
+            <div className="salud-fila" key={p.que}>
+              <div className="txt">
+                <b>{p.que}</b>
+                <span>{p.como}</span>
+              </div>
+              <span className={`marca-estado ${p.listo ? "bien" : "falta"}`}>
+                {p.listo ? "En vivo" : "Falta"}
               </span>
-            </li>
-            <li>
-              <span className="num">2</span>
-              <span>
-                <b>Meta</b>
-                <small>Una llave que se genera en el negocio, sin aprobación de nadie. Diez minutos tuyos y el panel queda al día solo.</small>
-              </span>
-            </li>
-            <li>
-              <span className="num">3</span>
-              <span>
-                <b>Eventia</b>
-                <small>Es tu propia base. Acá el trabajo no es técnico sino decidir qué mostrar. Esto es lo que convierte el ingreso estimado en plata contada.</small>
-              </span>
-            </li>
-            <li>
-              <span className="num">4</span>
-              <span>
-                <b>Google Ads</b>
-                <small>Queda al final porque necesita un token de desarrollador que Google aprueba en días. Mientras tanto, la carga sigue a mano una vez por semana.</small>
-              </span>
-            </li>
-          </ul>
+            </div>
+          ))}
         </Tarjeta>
       </Seccion>
 

@@ -3,6 +3,7 @@ import { Seccion, Tarjeta, Leyenda } from "../../../components/ui";
 import { PUBLICO } from "../../../lib/datos";
 import { plata, numero, porcentaje, sumarDias, hoyEnChile, fechaCorta, duracionTexto } from "../../../lib/calculos";
 import { datosSitio, ga4Conectado } from "../../../lib/ga4";
+import { metaConectado, metaPublico, explicarErrorMeta, type PublicoMeta } from "../../../lib/meta";
 
 export const dynamic = "force-dynamic";
 
@@ -55,17 +56,30 @@ async function leerSitio(): Promise<Sitio> {
   }
 }
 
+type Meta = PublicoMeta & { enVivo: boolean; periodo: string; error: string | null };
+
+/** Últimos 30 días cerrados desde la API de Meta, todas las campañas; si no
+ *  está conectada o falla, la foto de Cabañas cargada a mano el 15-09. */
+async function leerMeta(): Promise<Meta> {
+  const P = PUBLICO;
+  const foto: Meta = {
+    enVivo: false, periodo: P.periodoMeta, error: null, edad: P.edad, genero: P.genero,
+    plataforma: P.plataforma, ubicaciones: P.ubicaciones, regiones: P.regiones,
+  };
+  if (!metaConectado()) return foto;
+  try {
+    const hasta = sumarDias(hoyEnChile(), -1);
+    const desde = sumarDias(hasta, -29);
+    const d = await metaPublico(desde, hasta);
+    return { ...d, enVivo: true, error: null, periodo: `${fechaCorta(desde)} – ${fechaCorta(hasta)} · en vivo` };
+  } catch (e) {
+    return { ...foto, error: explicarErrorMeta(e) };
+  }
+}
+
 export default async function Publico() {
   const P = PUBLICO;
-  const S = await leerSitio();
-  const gastoTotal = P.regiones.reduce((a, r) => a + r[1], 0);
-  const fuera = P.regiones.filter((r) => !r[3]);
-  const gastoFuera = fuera.reduce((a, r) => a + r[1], 0);
-  const contactosFuera = fuera.reduce((a, r) => a + r[2], 0);
-  const dentro = P.regiones.find((r) => r[3])!;
-
-  const costoDentro = dentro[2] > 0 ? dentro[1] / dentro[2] : NaN;
-  const costoFuera = contactosFuera > 0 ? gastoFuera / contactosFuera : NaN;
+  const [M, S] = await Promise.all([leerMeta(), leerSitio()]);
 
   // Conversaciones con su costo al lado
   const conCosto = (xs: Array<[string, number, number]>): FilaBarra[] =>
@@ -79,11 +93,11 @@ export default async function Publico() {
   const simple = (xs: Array<[string, number]>): FilaBarra[] =>
     xs.map(([et, valor]) => ({ et, valor, texto: numero(valor) }));
 
-  const regiones: FilaBarra[] = P.regiones.map(([et, gasto, contactos, enZona]) => ({
+  const regiones: FilaBarra[] = M.regiones.map(([et, gasto, contactos, enZona]) => ({
     et,
     valor: gasto,
     texto: plata(gasto),
-    detalle: `${contactos} contactos`,
+    detalle: `${numero(contactos)} contactos`,
     color: enZona ? "meta" : "otro",
   }));
 
@@ -95,45 +109,49 @@ export default async function Publico() {
     color: sirve ? "google" : "otro",
   }));
 
+  const mismoPeriodo = M.enVivo && S.enVivo;
+
   return (
     <div className="pila">
       <div className="aviso info">
         <b>Estas cifras no cambian con el filtro de fechas.</b> Son el retrato de quién te ve, y para eso
-        hace falta el período completo: con pocos días las proporciones se vuelven ruido. Meta va del{" "}
-        {P.periodoMeta} y el sitio del {P.periodoGa}.
+        hace falta el período completo: con pocos días las proporciones se vuelven ruido.{" "}
+        {mismoPeriodo
+          ? "Meta y el sitio cubren los mismos últimos 30 días cerrados y se actualizan solos."
+          : `Meta va del ${M.periodo} y el sitio del ${S.periodo}.`}
       </div>
+
+      {M.error ? (
+        <div className="aviso ojo">
+          <b>Meta no se pudo leer en vivo; se muestra la foto cargada a mano.</b> {M.error}
+        </div>
+      ) : null}
 
       <Seccion
         titulo="Quién te escribe por Meta"
-        periodo={P.periodoMeta}
-        bajada="Conversaciones iniciadas y lo que costó cada una. Acá se ve a quién le está hablando de verdad el anuncio, más allá de a quién apuntaste."
+        periodo={M.periodo}
+        bajada={
+          M.enVivo
+            ? "Conversaciones de WhatsApp iniciadas y lo que costó cada una, sumando todas las campañas de Meta del período. Acá se ve a quién le está hablando de verdad el anuncio, más allá de a quién apuntaste."
+            : "Conversaciones iniciadas y lo que costó cada una en la campaña de Cabañas. Acá se ve a quién le está hablando de verdad el anuncio, más allá de a quién apuntaste."
+        }
       >
         <div className="rejilla dos">
-          <Tarjeta
-            titulo="Por edad"
-            extra="conversaciones · costo de cada una"
-            nota="El grueso está entre los 25 y los 54. Los de 25 a 34 son los más baratos de conseguir; los de 55 a 64, los más caros."
-          >
-            <BarrasH filas={conCosto(P.edad)} color="meta" />
+          <Tarjeta titulo="Por edad" extra="conversaciones · costo de cada una" nota={notaEdad(M)}>
+            <BarrasH filas={conCosto(M.edad)} color="meta" />
           </Tarjeta>
 
-          <Tarjeta
-            titulo="Por género"
-            extra="conversaciones · costo de cada una"
-            nota="Dos de cada tres conversaciones las inician mujeres, y salen más baratas. Quien arma el panorama suele ser ella: las fotos y el texto deberían hablarle a ella."
-          >
-            <BarrasH filas={conCosto(P.genero)} color="meta" />
+          <Tarjeta titulo="Por género" extra="conversaciones · costo de cada una" nota={notaGenero(M)}>
+            <BarrasH filas={conCosto(M.genero)} color="meta" />
           </Tarjeta>
 
-          <Tarjeta
-            titulo="Instagram contra Facebook"
-            extra="conversaciones · costo de cada una"
-            nota={`Instagram trae más conversaciones y cada una cuesta ${plata(P.plataforma[0][2])} contra ${plata(P.plataforma[1][2])} de Facebook. Dentro de Facebook, lo que mejor rinde son los Reels (${P.ubicaciones[0][1]} a ${plata(P.ubicaciones[0][2])}) y las Historias.`}
-          >
-            <BarrasH filas={conCosto(P.plataforma)} color="meta" />
+          <Tarjeta titulo="Instagram contra Facebook" extra="conversaciones · costo de cada una"
+                   nota={notaPlataforma(M)}>
+            <BarrasH filas={conCosto(M.plataforma)} color="meta" />
           </Tarjeta>
 
-          <Tarjeta titulo="Dónde se gastó la plata" extra="por región">
+          <Tarjeta titulo="Dónde se gastó la plata" extra="por región"
+                   nota="Por región Meta no entrega conversaciones iniciadas sino «contactos»: cualquier mensaje, también los de quien ya había escrito antes. Por eso estos números no suman lo mismo que las otras tarjetas.">
             <BarrasH filas={regiones} />
             <div style={{ marginTop: 12 }}>
               <Leyenda items={[["Tu zona", "var(--meta)"], ["Fuera de la zona", "var(--otro)"]]} />
@@ -141,15 +159,7 @@ export default async function Publico() {
           </Tarjeta>
         </div>
 
-        <div className="aviso ojo" style={{ marginTop: 14 }}>
-          <b>La fuga que se corrigió.</b> {plata(gastoFuera)} — el{" "}
-          {porcentaje(gastoFuera / gastoTotal, 0)} del gasto del mes — se mostró fuera de la zona. El 15 de
-          septiembre el público quedó acotado a Chillán, Concepción y Los Ángeles, así que esto debería
-          desaparecer del próximo corte. Un matiz que conviene mirar: el contacto de Santiago salió más
-          barato ({plata(costoFuera)} contra {plata(costoDentro)} en Bío Bío), pero está a cinco horas de
-          auto. Lo que hay que vigilar no es el precio del contacto, sino cuántos de esos terminan durmiendo
-          en una cabaña.
-        </div>
+        <NotaZona M={M} />
       </Seccion>
 
       <Seccion
@@ -248,4 +258,83 @@ function notaAparato(S: Sitio) {
   const cel = S.dispositivo.find((c) => c[0] === "Celular")?.[1] ?? 0;
   if (!total) return undefined;
   return `${Math.round((cel / total) * 10)} de cada diez entran por el celular. Todo lo que se publique tiene que verse bien primero en pantalla chica.`;
+}
+
+// ── Notas de Meta ────────────────────────────────────────────
+// Un costo con dos o tres conversaciones es ruido: para decir «el más barato»
+// se exigen al menos cinco.
+const MINIMO = 5;
+
+function notaEdad(M: Meta) {
+  const firmes = M.edad.filter((e) => e[1] >= MINIMO);
+  if (firmes.length < 2) return undefined;
+  const [a, b] = [...M.edad].sort((x, y) => y[1] - x[1]);
+  const barato = [...firmes].sort((x, y) => x[2] - y[2])[0];
+  const caro = [...firmes].sort((x, y) => y[2] - x[2])[0];
+  return `Los grupos que más escriben son los de ${a[0]} y ${b[0]} años. Los de ${barato[0]} son los más baratos de conseguir (${plata(barato[2])}); los de ${caro[0]}, los más caros (${plata(caro[2])}).`;
+}
+
+function notaGenero(M: Meta) {
+  const total = M.genero.reduce((s, g) => s + g[1], 0);
+  const mujeres = M.genero.find((g) => g[0] === "Mujeres");
+  const hombres = M.genero.find((g) => g[0] === "Hombres");
+  if (!total || !mujeres || !hombres) return undefined;
+  const diez = Math.round((mujeres[1] / total) * 10);
+  const precio = mujeres[2] <= hombres[2] ? "y salen más baratas" : "aunque salen más caras";
+  const consejo = diez >= 6
+    ? " Quien arma el panorama suele ser ella: las fotos y el texto deberían hablarle a ella."
+    : "";
+  return `${diez} de cada diez conversaciones las inician mujeres, ${precio} (${plata(mujeres[2])} contra ${plata(hombres[2])}).${consejo}`;
+}
+
+function notaPlataforma(M: Meta) {
+  const [a, b] = M.plataforma;
+  if (!a || !b) return undefined;
+  const firmes = M.ubicaciones.filter((u) => u[1] >= MINIMO);
+  const mejor = [...firmes].sort((x, y) => x[2] - y[2])[0];
+  const ubic = mejor ? ` La ubicación más barata es ${mejor[0]}: ${numero(mejor[1])} conversaciones a ${plata(mejor[2])}.` : "";
+  return `${a[0]} trae ${numero(a[1])} conversaciones a ${plata(a[2])} cada una; ${b[0]}, ${numero(b[1])} a ${plata(b[2])}.${ubic}`;
+}
+
+/** Cuánto se fue fuera de Bío Bío y Ñuble. El público de Cabañas se acotó el
+ *  15-09, así que mientras el período incluya días anteriores la fuga sigue
+ *  apareciendo y se va apagando sola. */
+function NotaZona({ M }: { M: Meta }) {
+  const total = M.regiones.reduce((a, r) => a + r[1], 0);
+  const dentro = M.regiones.filter((r) => r[3]);
+  const fuera = M.regiones.filter((r) => !r[3]);
+  const gastoFuera = fuera.reduce((a, r) => a + r[1], 0);
+  if (!total) return null;
+  const parte = gastoFuera / total;
+
+  const gastoDentro = dentro.reduce((a, r) => a + r[1], 0);
+  const contactosDentro = dentro.reduce((a, r) => a + r[2], 0);
+  const santiago = fuera.find((r) => r[0] === "Santiago");
+  const costoDentro = contactosDentro > 0 ? gastoDentro / contactosDentro : NaN;
+  const costoStgo = santiago && santiago[2] > 0 ? santiago[1] / santiago[2] : NaN;
+
+  if (parte < 0.03) {
+    return (
+      <div className="aviso info" style={{ marginTop: 14 }}>
+        <b>La plata se queda en tu zona.</b> Solo {plata(gastoFuera)} ({porcentaje(parte, 0)}) se mostró fuera
+        de Bío Bío y Ñuble en el período.
+      </div>
+    );
+  }
+
+  return (
+    <div className="aviso ojo" style={{ marginTop: 14 }}>
+      <b>Fuga fuera de la zona.</b> {plata(gastoFuera)} — el {porcentaje(parte, 0)} del gasto del período — se
+      mostró fuera de Bío Bío y Ñuble. El 15 de septiembre el público de Cabañas quedó acotado a Chillán,
+      Concepción y Los Ángeles, así que este número debería ir bajando a medida que el período deja atrás
+      esa fecha; si no baja, alguna otra campaña sigue abierta a todo Chile.
+      {isFinite(costoStgo) && isFinite(costoDentro) ? (
+        <>
+          {" "}Un matiz: el contacto de Santiago costó {plata(costoStgo)} contra {plata(costoDentro)} en tu
+          zona, pero está a cinco horas de auto. Lo que importa no es el precio del contacto, sino cuántos
+          terminan durmiendo en una cabaña.
+        </>
+      ) : null}
+    </div>
+  );
 }
