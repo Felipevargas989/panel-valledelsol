@@ -3,7 +3,7 @@ import FiltroFechas from "../../../components/FiltroFechas";
 import Ahora from "../../../components/Ahora";
 import { BarrasH, LineaDia, ParDeGraficos, type FilaBarra } from "../../../components/graficos";
 import { Kpi, Seccion, Tarjeta } from "../../../components/ui";
-import { datosSitio, ga4Conectado, explicarError, EVENTOS, type DatosSitio } from "../../../lib/ga4";
+import { datosSitio, ga4Conectado, explicarError, type DatosSitio } from "../../../lib/ga4";
 import {
   variacion, numero, porcentaje, sumarDias, fechaLarga, hoyEnChile, duracionTexto as duracion,
 } from "../../../lib/calculos";
@@ -47,13 +47,17 @@ export default async function Sitio({
   const { actual: a, anterior: p } = d;
   const totalSesiones = d.canales.reduce((s, c) => s + c.sesiones, 0) || a.sesiones;
 
-  const eventos: FilaBarra[] = d.eventos.map((e) => ({
-    et: e.nombre,
-    valor: e.cantidad,
-    texto: numero(e.cantidad),
-    color: e.clave in EVENTOS ? "sitio" : "otro",
-  }));
-  const hayAjenos = d.eventos.some((e) => !(e.clave in EVENTOS));
+  // Primero las nuestras y después las heredadas, cada grupo de mayor a menor.
+  const eventos: FilaBarra[] = [...d.eventos]
+    .sort((x, y) => Number(y.nuestra) - Number(x.nuestra) || y.cantidad - x.cantidad)
+    .map((e) => ({
+      et: e.nombre,
+      valor: e.cantidad,
+      texto: numero(e.cantidad),
+      detalle: e.nuestra ? undefined : "no se suma",
+      color: e.nuestra ? "sitio" : "otro",
+    }));
+  const heredadas = d.conversionesAnalytics - a.conversiones;
 
   return (
     <div className="pila">
@@ -82,7 +86,8 @@ export default async function Sitio({
                variacion={variacion(tasa(a.interactivas, a.sesiones), tasa(p.interactivas, p.sesiones))}
                pie="visitas que no se fueron al tiro" />
           <Kpi rotulo="Conversiones" familia="volumen" valor={numero(a.conversiones)}
-               variacion={variacion(a.conversiones, p.conversiones)} />
+               variacion={variacion(a.conversiones, p.conversiones)}
+               pie="solo las que configuramos" />
           <Kpi rotulo="Tasa de conversión" familia="eficiencia" valor={porcentaje(tasa(a.conversiones, a.sesiones), 1)}
                variacion={variacion(tasa(a.conversiones, a.sesiones), tasa(p.conversiones, p.sesiones))}
                pie="conversiones por cada visita" />
@@ -114,8 +119,8 @@ export default async function Sitio({
       >
         <Tarjeta
           nota={
-            hayAjenos
-              ? "Las barras violetas son eventos que no configuramos nosotros: vienen de mediciones antiguas y inflan el total de conversiones. Conviene desmarcarlos como evento clave en Analytics."
+            heredadas > 0
+              ? `Las barras violetas no son conversiones: son visitas a páginas que Analytics marca como «evento clave» por una configuración antigua. Analytics suma ${numero(d.conversionesAnalytics)} en el período; el panel cuenta solo las ${numero(a.conversiones)} reales y deja fuera esas ${numero(heredadas)}. Desmarcarlas en Analytics es una decisión aparte, porque Google Ads podría estar usando alguna.`
               : "Todas las conversiones del período son de los eventos que configuramos nosotros."
           }
         >

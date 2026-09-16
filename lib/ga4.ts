@@ -186,7 +186,8 @@ const CIUDADES: Record<string, string> = {
   Nuble: "Ñuble",
 };
 
-/** Los eventos que configuramos en Tag Manager, con nombre de persona. */
+/** Las conversiones que configuramos nosotros en Tag Manager (14-09-2026).
+ *  Son las ÚNICAS que el panel cuenta como conversión. */
 export const EVENTOS: Record<string, string> = {
   eventos_cotizacion_enviada: "Cotización de evento enviada",
   eventos_cotizar: "Apretó «Cotizar» en eventos",
@@ -195,7 +196,25 @@ export const EVENTOS: Record<string, string> = {
   cabanas_reserva_pagada: "Reserva de cabaña pagada",
   cabanas_whatsapp: "WhatsApp desde cabañas",
   whatsapp_sin_linea: "WhatsApp sin línea de negocio",
+};
+
+// Analytics también marca como «evento clave» cosas heredadas del sitio
+// viejo que NO son conversiones: son simples visitas a una página. Medido el
+// 16-09-2026: en 28 días fueron 502 de las 582 «conversiones» que mostraba
+// Analytics. Se muestran aparte, con su nombre real, y no se suman.
+const HEREDADOS: Record<string, string> = {
+  pagina_cabanas: "Vio la página de cabañas",
+  paseos_curso: "Vio paseos de curso",
+  matrimonios: "Vio matrimonios",
+  eventos_corporativos: "Vio eventos corporativos",
+  ads_conversion_Vista_de_p_gina_Carga_d_1: "Vista de página para Google Ads",
+  form_submit: "Envío de formulario (automático)",
   purchase: "Compra (evento antiguo)",
+};
+
+const NUESTRAS = Object.keys(EVENTOS);
+const soloNuestras = {
+  filter: { fieldName: "eventName", inListFilter: { values: NUESTRAS } },
 };
 
 const sinDato = (v: string) => (!v || v === "(not set)" ? "Sin dato" : v);
@@ -218,7 +237,10 @@ export type DatosSitio = {
   dias: Array<{ fecha: string; sesiones: number; conversiones: number; personas: number }>;
   canales: Array<{ nombre: string; sesiones: number; conversiones: number }>;
   fuentes: Array<{ nombre: string; sesiones: number; conversiones: number }>;
-  eventos: Array<{ clave: string; nombre: string; cantidad: number }>;
+  /** Todo lo que Analytics marca como evento clave, nuestro o heredado. */
+  eventos: Array<{ clave: string; nombre: string; cantidad: number; nuestra: boolean }>;
+  /** Lo que Analytics suma como conversiones, heredadas incluidas. */
+  conversionesAnalytics: number;
   entradas: Array<{ pagina: string; sesiones: number; conversiones: number }>;
   paginas: Array<[string, number]>;
   ciudades: Array<[string, number]>;
@@ -241,8 +263,17 @@ async function consultarSitio(desde: string, hasta: string): Promise<DatosSitio>
     limit: limite,
   });
 
-  // GA4 acepta hasta cinco informes por llamada: van dos tandas en paralelo.
-  const [a, b] = await Promise.all([
+  const convPor = (dim: string, limite: number) => ({
+    dateRanges: rango,
+    dimensions: [{ name: dim }],
+    metrics: [{ name: "keyEvents" }],
+    dimensionFilter: soloNuestras,
+    limit: limite,
+  });
+
+  // GA4 acepta hasta cinco informes por llamada: van tres tandas en paralelo.
+  // La tercera repite los cortes contando solo NUESTRAS conversiones.
+  const [a, b, c] = await Promise.all([
     llamar<{ reports: Reporte[] }>("batchRunReports", {
       requests: [
         {
@@ -274,10 +305,34 @@ async function consultarSitio(desde: string, hasta: string): Promise<DatosSitio>
         top("operatingSystem", ["activeUsers"], 7),
       ],
     }),
+    llamar<{ reports: Reporte[] }>("batchRunReports", {
+      requests: [
+        {
+          dateRanges: [
+            { startDate: desde, endDate: hasta, name: "actual" },
+            { startDate: previo.desde, endDate: previo.hasta, name: "anterior" },
+          ],
+          metrics: [{ name: "keyEvents" }],
+          dimensionFilter: soloNuestras,
+        },
+        convPor("date", 400),
+        convPor("sessionDefaultChannelGroup", 50),
+        convPor("sessionSourceMedium", 200),
+        convPor("landingPage", 200),
+      ],
+    }),
   ]);
 
   const [rTot, rDias, rCanales, rFuentes, rEventos] = a.reports ?? [];
   const [rEntradas, rPaginas, rCiudades, rDisp, rSo] = b.reports ?? [];
+  const [cTot, cDias, cCanales, cFuentes, cEntradas] = c.reports ?? [];
+
+  /** Conversiones nuestras por valor de la dimensión, para cruzar. */
+  const indice = (r: Reporte | undefined) => new Map(filas(r).map((f) => [f.d[0], f.m[0]]));
+  const convCanal = indice(cCanales);
+  const convFuente = indice(cFuentes);
+  const convEntrada = indice(cEntradas);
+  const convDia = indice(cDias);
 
   // Con dos rangos de fecha, GA agrega sola la columna del rango.
   const totales = { actual: vacios(), anterior: vacios() };
@@ -285,6 +340,12 @@ async function consultarSitio(desde: string, hasta: string): Promise<DatosSitio>
     const cual = f.d[0] === "anterior" ? "anterior" : "actual";
     const [personas, nuevos, sesiones, interactivas, conversiones, duracionMedia] = f.m;
     totales[cual] = { personas, nuevos, sesiones, interactivas, conversiones, duracionMedia };
+  }
+  const conversionesAnalytics = totales.actual.conversiones;
+  totales.actual.conversiones = 0;
+  totales.anterior.conversiones = 0;
+  for (const f of filas(cTot)) {
+    totales[f.d[0] === "anterior" ? "anterior" : "actual"].conversiones = f.m[0];
   }
 
   // Los días sin visitas no vienen en la respuesta: se rellenan con cero.
@@ -297,26 +358,36 @@ async function consultarSitio(desde: string, hasta: string): Promise<DatosSitio>
   const dias: DatosSitio["dias"] = [];
   for (let d = desde; d <= hasta; d = sumarDias(d, 1)) {
     const m = porDia.get(d) ?? [0, 0, 0];
-    dias.push({ fecha: d, sesiones: m[0], conversiones: m[1], personas: m[2] });
+    const clave = d.replaceAll("-", "");
+    dias.push({ fecha: d, sesiones: m[0], conversiones: convDia.get(clave) ?? 0, personas: m[2] });
   }
 
-  const conSesiones = (r: Reporte | undefined, traducir: (v: string) => string) =>
-    filas(r).map((f) => ({ nombre: traducir(f.d[0]), sesiones: f.m[0], conversiones: f.m[1] }));
+  const conSesiones = (
+    r: Reporte | undefined,
+    conv: Map<string, number>,
+    traducir: (v: string) => string
+  ) => filas(r).map((f) => ({ nombre: traducir(f.d[0]), sesiones: f.m[0], conversiones: conv.get(f.d[0]) ?? 0 }));
 
   return {
     desde,
     hasta,
     ...totales,
     dias,
-    canales: conSesiones(rCanales, (v) => CANALES[v] ?? v),
-    fuentes: conSesiones(rFuentes, sinDato),
+    conversionesAnalytics,
+    canales: conSesiones(rCanales, convCanal, (v) => CANALES[v] ?? v),
+    fuentes: conSesiones(rFuentes, convFuente, sinDato),
     eventos: filas(rEventos)
       .filter((f) => f.m[0] > 0)
-      .map((f) => ({ clave: f.d[0], nombre: EVENTOS[f.d[0]] ?? f.d[0], cantidad: f.m[0] })),
+      .map((f) => ({
+        clave: f.d[0],
+        nombre: EVENTOS[f.d[0]] ?? HEREDADOS[f.d[0]] ?? f.d[0],
+        cantidad: f.m[0],
+        nuestra: f.d[0] in EVENTOS,
+      })),
     entradas: filas(rEntradas).map((f) => ({
       pagina: f.d[0] === "/" ? "Portada ( / )" : sinDato(f.d[0]),
       sesiones: f.m[0],
-      conversiones: f.m[1],
+      conversiones: convEntrada.get(f.d[0]) ?? 0,
     })),
     paginas: filas(rPaginas).map((f) => [sinDato(f.d[0]), f.m[0]]),
     ciudades: filas(rCiudades).map((f) => [CIUDADES[f.d[0]] ?? sinDato(f.d[0]), f.m[0]]),
@@ -325,7 +396,7 @@ async function consultarSitio(desde: string, hasta: string): Promise<DatosSitio>
   };
 }
 
-export const datosSitio = unstable_cache(consultarSitio, ["ga4-sitio-v1"], { revalidate: 3600 });
+export const datosSitio = unstable_cache(consultarSitio, ["ga4-sitio-v2"], { revalidate: 3600 });
 
 // ── Tiempo real ──────────────────────────────────────────────
 export type Ahora = {
