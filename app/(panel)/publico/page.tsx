@@ -1,10 +1,63 @@
 import { BarrasH, type FilaBarra } from "../../../components/graficos";
 import { Seccion, Tarjeta, Leyenda } from "../../../components/ui";
 import { PUBLICO } from "../../../lib/datos";
-import { plata, numero, porcentaje } from "../../../lib/calculos";
+import { plata, numero, porcentaje, sumarDias, hoyEnChile, fechaCorta, duracionTexto } from "../../../lib/calculos";
+import { datosSitio, ga4Conectado } from "../../../lib/ga4";
 
-export default function Publico() {
+export const dynamic = "force-dynamic";
+
+const normal = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const GRAN_CONCE = ["concepcion", "san pedro de la paz", "talcahuano", "coronel", "hualpen", "chiguayante", "penco", "tome", "lota"];
+
+type Sitio = {
+  enVivo: boolean;
+  periodo: string;
+  usuarios: number;
+  sesiones: number;
+  interaccion: number;
+  tiempoMedio: string;
+  canales: Array<[string, number]>;
+  ciudades: Array<[string, number]>;
+  dispositivo: Array<[string, number]>;
+  sistema: Array<[string, number]>;
+  paginas: Array<[string, number]>;
+};
+
+/** Últimos 30 días cerrados desde Analytics; si no está conectado o falla,
+ *  la foto cargada a mano el 15-09. */
+async function leerSitio(): Promise<Sitio> {
+  const g = PUBLICO.ga;
+  const foto: Sitio = {
+    enVivo: false, periodo: PUBLICO.periodoGa, usuarios: g.usuarios, sesiones: g.sesiones,
+    interaccion: g.interaccion, tiempoMedio: g.tiempoMedio, canales: g.canales, ciudades: g.ciudades,
+    dispositivo: g.dispositivo, sistema: g.sistema, paginas: g.paginas,
+  };
+  if (!ga4Conectado()) return foto;
+  try {
+    const hasta = sumarDias(hoyEnChile(), -1);
+    const desde = sumarDias(hasta, -29);
+    const d = await datosSitio(desde, hasta);
+    return {
+      enVivo: true,
+      periodo: `${fechaCorta(desde)} – ${fechaCorta(hasta)} · en vivo`,
+      usuarios: d.actual.personas,
+      sesiones: d.actual.sesiones,
+      interaccion: d.actual.sesiones > 0 ? d.actual.interactivas / d.actual.sesiones : NaN,
+      tiempoMedio: duracionTexto(d.actual.duracionMedia),
+      canales: d.canales.map((c) => [c.nombre, c.sesiones]),
+      ciudades: d.ciudades,
+      dispositivo: d.dispositivos,
+      sistema: d.sistemas,
+      paginas: d.paginas,
+    };
+  } catch {
+    return foto;
+  }
+}
+
+export default async function Publico() {
   const P = PUBLICO;
+  const S = await leerSitio();
   const gastoTotal = P.regiones.reduce((a, r) => a + r[1], 0);
   const fuera = P.regiones.filter((r) => !r[3]);
   const gastoFuera = fuera.reduce((a, r) => a + r[1], 0);
@@ -101,51 +154,36 @@ export default function Publico() {
 
       <Seccion
         titulo="Quién entra al sitio"
-        periodo={P.periodoGa}
-        bajada={`${numero(P.ga.usuarios)} personas y ${numero(P.ga.sesiones)} visitas en el período, con ${porcentaje(P.ga.interaccion, 0)} de interacción y ${P.ga.tiempoMedio} de permanencia.`}
+        periodo={S.periodo}
+        bajada={`${numero(S.usuarios)} personas y ${numero(S.sesiones)} visitas, con ${porcentaje(S.interaccion, 0)} de interacción y ${S.tiempoMedio} de permanencia por visita.`}
       >
         <div className="rejilla dos">
-          <Tarjeta
-            titulo="De dónde llegan"
-            extra="visitas"
-            nota="La pauta de Google recién parte: hoy es una porción chica y debería crecer semana a semana. Lo que manda hoy es la gente que llega sola y la que busca en Google sin pagar."
-          >
-            <BarrasH filas={simple(P.ga.canales)} color="sitio" />
+          <Tarjeta titulo="De dónde llegan" extra="visitas" nota={notaCanales(S)}>
+            <BarrasH filas={simple(S.canales)} color="sitio" />
           </Tarjeta>
 
-          <Tarjeta
-            titulo="Desde qué ciudad"
-            extra="personas"
-            nota={`Santiago aparece primero, pero sumando Concepción, San Pedro, Talcahuano, Coronel y Hualpén, el Gran Concepción llega a ${numero(P.ga.granConce)} personas y lo supera. La zona pesa más de lo que parece a primera vista.`}
-          >
-            <BarrasH filas={simple(P.ga.ciudades)} color="sitio" />
+          <Tarjeta titulo="Desde qué ciudad" extra="personas" nota={notaCiudades(S)}>
+            <BarrasH filas={simple(S.ciudades)} color="sitio" />
           </Tarjeta>
 
-          <Tarjeta
-            titulo="Con qué aparato"
-            extra="personas"
-            nota="Siete de cada diez entran por el celular. Todo lo que se publique tiene que verse bien primero en pantalla chica."
-          >
-            <BarrasH filas={simple(P.ga.dispositivo)} color="sitio" />
+          <Tarjeta titulo="Con qué aparato" extra="personas" nota={notaAparato(S)}>
+            <BarrasH filas={simple(S.dispositivo)} color="sitio" />
           </Tarjeta>
 
-          <Tarjeta
-            titulo="Con qué sistema"
-            extra="personas"
-            nota="Android manda y el iPhone va segundo. Por eso importa verificar el dominio en Meta: sin eso, la medición en iPhone pierde precisión y se subestima lo que trae la pauta."
-          >
-            <BarrasH filas={simple(P.ga.sistema)} color="sitio" />
+          <Tarjeta titulo="Con qué sistema" extra="personas"
+                   nota={`${S.sistema[0]?.[0] ?? "—"} manda y ${S.sistema[1]?.[0] ?? "—"} va segundo. Por eso importa verificar el dominio en Meta: sin eso, la medición en iPhone pierde precisión y se subestima lo que trae la pauta.`}>
+            <BarrasH filas={simple(S.sistema)} color="sitio" />
           </Tarjeta>
         </div>
       </Seccion>
 
       <Seccion
         titulo="Qué miran cuando llegan"
-        periodo="18 ago – 14 sep 2026"
-        bajada={`${numero(P.ga.vistasTotales)} vistas de página en el período.`}
+        periodo={S.enVivo ? S.periodo : "18 ago – 14 sep 2026"}
+        bajada="Las páginas más vistas del período."
       >
-        <Tarjeta nota="Después de la portada, cabañas dobla a cualquier otra sección. El interés natural del público está ahí, y calza con que la campaña de cabañas sea la que trae conversaciones.">
-          <BarrasH filas={simple(P.ga.paginas)} color="sitio" />
+        <Tarjeta nota={S.paginas.length > 1 ? `Después de «${S.paginas[0][0]}», lo más visto es «${S.paginas[1][0]}».` : undefined}>
+          <BarrasH filas={simple(S.paginas)} color="sitio" />
         </Tarjeta>
       </Seccion>
 
@@ -181,4 +219,33 @@ export default function Publico() {
       </Seccion>
     </div>
   );
+}
+
+// ── Notas que se escriben con los datos ──────────────────────
+// Con Analytics en vivo los números cambian: un texto fijo como «siete de
+// cada diez entran por el celular» dejaría de ser cierto. Por eso se arman
+// a partir de lo que llega.
+
+function notaCanales(S: Sitio) {
+  const total = S.canales.reduce((a, c) => a + c[1], 0);
+  const pago = S.canales.find((c) => c[0] === "Búsqueda pagada")?.[1] ?? 0;
+  const primero = S.canales[0];
+  if (!total || !primero) return undefined;
+  return `Lo que más trae visitas es ${primero[0].toLowerCase()}, con el ${porcentaje(primero[1] / total, 0)}. La búsqueda pagada de Google aporta el ${porcentaje(pago / total, 0)}: partió el 14 de septiembre y debería crecer semana a semana.`;
+}
+
+function notaCiudades(S: Sitio) {
+  const conce = S.ciudades.filter((c) => GRAN_CONCE.includes(normal(c[0]))).reduce((a, c) => a + c[1], 0);
+  const stgo = S.ciudades.find((c) => normal(c[0]) === "santiago")?.[1] ?? 0;
+  if (!conce) return undefined;
+  return conce >= stgo
+    ? `Sumando Concepción y las comunas vecinas, el Gran Concepción llega a ${numero(conce)} personas y supera a Santiago (${numero(stgo)}). La zona pesa más de lo que parece a primera vista.`
+    : `Santiago (${numero(stgo)}) supera al Gran Concepción sumado (${numero(conce)}). Vale la pena mirar si esas visitas de Santiago terminan en reservas o solo miran.`;
+}
+
+function notaAparato(S: Sitio) {
+  const total = S.dispositivo.reduce((a, c) => a + c[1], 0);
+  const cel = S.dispositivo.find((c) => c[0] === "Celular")?.[1] ?? 0;
+  if (!total) return undefined;
+  return `${Math.round((cel / total) * 10)} de cada diez entran por el celular. Todo lo que se publique tiene que verse bien primero en pantalla chica.`;
 }

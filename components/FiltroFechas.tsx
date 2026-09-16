@@ -9,13 +9,22 @@ import { RANGO_DATOS } from "../lib/datos";
 // ya elegido — que es la misma forma que va a tener cuando los datos vengan
 // de las APIs.
 
-const ATAJOS: Array<[string, number]> = [
-  ["7 días", 7],
-  ["14 días", 14],
-  ["30 días", 30],
-];
-
-export default function FiltroFechas({ desde, hasta }: { desde: string; hasta: string }) {
+export default function FiltroFechas({
+  desde,
+  hasta,
+  min = RANGO_DATOS.desde,
+  max = RANGO_DATOS.hasta,
+  atajos = [7, 14, 30],
+  conTodo = true,
+}: {
+  desde: string;
+  hasta: string;
+  /** Primer y último día elegibles. Por defecto, los de la carga manual. */
+  min?: string;
+  max?: string;
+  atajos?: number[];
+  conTodo?: boolean;
+}) {
   const router = useRouter();
   const ruta = usePathname();
   const params = useSearchParams();
@@ -29,7 +38,7 @@ export default function FiltroFechas({ desde, hasta }: { desde: string; hasta: s
 
   const largo = diasEntre(desde, hasta);
   const previo = periodoAnterior(desde, hasta);
-  const finDatos = RANGO_DATOS.hasta;
+  const finDatos = max;
 
   return (
     <div className="filtros">
@@ -39,7 +48,7 @@ export default function FiltroFechas({ desde, hasta }: { desde: string; hasta: s
           id="desde"
           type="date"
           value={desde}
-          min={RANGO_DATOS.desde}
+          min={min}
           max={hasta}
           onChange={(e) => e.target.value && aplicar(e.target.value, hasta)}
         />
@@ -59,7 +68,8 @@ export default function FiltroFechas({ desde, hasta }: { desde: string; hasta: s
       <div className="campo">
         <label>Atajos</label>
         <div className="atajos">
-          {ATAJOS.map(([texto, n]) => {
+          {atajos.map((n) => {
+            const texto = `${n} días`;
             const d = sumarDias(finDatos, -(n - 1));
             const activo = desde === d && hasta === finDatos;
             return (
@@ -69,13 +79,15 @@ export default function FiltroFechas({ desde, hasta }: { desde: string; hasta: s
               </button>
             );
           })}
-          <button
-            className="atajo"
-            aria-pressed={desde === RANGO_DATOS.desde && hasta === finDatos}
-            onClick={() => aplicar(RANGO_DATOS.desde, finDatos)}
-          >
-            Todo
-          </button>
+          {conTodo ? (
+            <button
+              className="atajo"
+              aria-pressed={desde === min && hasta === finDatos}
+              onClick={() => aplicar(min, finDatos)}
+            >
+              Todo
+            </button>
+          ) : null}
         </div>
       </div>
 

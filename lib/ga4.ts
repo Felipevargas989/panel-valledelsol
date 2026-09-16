@@ -1,0 +1,379 @@
+// CONEXIÓN CON GOOGLE ANALYTICS (GA4)
+//
+// Lee la propiedad "Valle del Sol" con una cuenta de servicio de solo
+// lectura. La llave vive en la variable GA4_CREDENCIALES de Vercel (el JSON
+// tal cual, o en base64 para el entorno local). Nunca se escribe en el
+// código: este repositorio es público.
+//
+// No usa la librería oficial de Google a propósito: esa arrastra gRPC y pesa
+// decenas de megas. Acá bastan dos llamadas HTTP — pedir un pase firmado con
+// la llave y consultar los informes.
+//
+// Todo lo que se consulta queda guardado un rato para no gastar cuota:
+// los informes una hora, el tiempo real 55 segundos.
+
+import { createSign } from "node:crypto";
+import { unstable_cache } from "next/cache";
+import { sumarDias, periodoAnterior } from "./calculos";
+
+export const PROPIEDAD_GA4 = "353296129";
+
+// ── Credenciales ─────────────────────────────────────────────
+type Credenciales = { client_email: string; private_key: string };
+
+function leer(texto: string): Credenciales | null {
+  try {
+    const j = JSON.parse(texto);
+    return j?.client_email && j?.private_key
+      ? { client_email: j.client_email, private_key: j.private_key }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function credenciales(): Credenciales | null {
+  const crudo = process.env.GA4_CREDENCIALES?.trim();
+  if (!crudo) return null;
+  return leer(crudo) ?? leer(Buffer.from(crudo, "base64").toString("utf8"));
+}
+
+export const ga4Conectado = () => credenciales() !== null;
+
+// ── Errores que se pueden explicar ───────────────────────────
+export class ErrorGa4 extends Error {
+  constructor(public tipo: "llave" | "permiso" | "otro", mensaje: string) {
+    super(mensaje);
+  }
+}
+
+/** Traduce el error a algo que Felipe pueda resolver sin leer código. */
+export function explicarError(e: unknown): string {
+  if (e instanceof ErrorGa4) {
+    if (e.tipo === "llave")
+      return "Google rechazó la llave. Revisa que en Vercel esté pegado el contenido completo del archivo JSON, sin recortes.";
+    if (e.tipo === "permiso")
+      return "La llave funciona, pero todavía no tiene permiso para leer la propiedad Valle del Sol. Falta agregar el correo de la cuenta de servicio como Lector en Analytics (Administrador → Gestión de accesos a la propiedad).";
+    return `Analytics respondió con un error: ${e.message}`;
+  }
+  return "No se pudo conectar con Analytics. Suele ser pasajero: recarga en un minuto.";
+}
+
+// ── Pase de acceso ───────────────────────────────────────────
+let pase: { valor: string; vence: number } | null = null;
+const b64url = (s: string) => Buffer.from(s).toString("base64url");
+
+async function paseDeAcceso(c: Credenciales): Promise<string> {
+  const ahora = Math.floor(Date.now() / 1000);
+  if (pase && pase.vence - 60 > ahora) return pase.valor;
+
+  const cabecera = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const cuerpo = b64url(
+    JSON.stringify({
+      iss: c.client_email,
+      scope: "https://www.googleapis.com/auth/analytics.readonly",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: ahora,
+      exp: ahora + 3600,
+    })
+  );
+
+  let firma: string;
+  try {
+    firma = createSign("RSA-SHA256").update(`${cabecera}.${cuerpo}`).sign(c.private_key, "base64url");
+  } catch {
+    throw new ErrorGa4("llave", "la llave privada no se pudo leer");
+  }
+
+  const r = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: `${cabecera}.${cuerpo}.${firma}`,
+    }),
+    cache: "no-store",
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) {
+    throw new ErrorGa4("llave", j.error_description || j.error || `HTTP ${r.status}`);
+  }
+  pase = { valor: j.access_token, vence: ahora + (j.expires_in ?? 3600) };
+  return pase.valor;
+}
+
+// ── Llamadas a la API ────────────────────────────────────────
+type Reporte = {
+  rows?: Array<{
+    dimensionValues?: Array<{ value: string }>;
+    metricValues?: Array<{ value: string }>;
+  }>;
+  totals?: Array<{ metricValues?: Array<{ value: string }> }>;
+};
+
+async function llamar<T>(metodo: string, cuerpo: unknown): Promise<T> {
+  const c = credenciales();
+  if (!c) throw new ErrorGa4("llave", "no hay credenciales");
+  const token = await paseDeAcceso(c);
+  const r = await fetch(
+    `https://analyticsdata.googleapis.com/v1beta/properties/${PROPIEDAD_GA4}:${metodo}`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(cuerpo),
+      cache: "no-store",
+    }
+  );
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const mensaje = j?.error?.message ?? `HTTP ${r.status}`;
+    throw new ErrorGa4(r.status === 403 ? "permiso" : r.status === 401 ? "llave" : "otro", mensaje);
+  }
+  return j as T;
+}
+
+type Fila = { d: string[]; m: number[] };
+
+const filas = (r: Reporte | undefined): Fila[] =>
+  (r?.rows ?? []).map((row) => ({
+    d: (row.dimensionValues ?? []).map((x) => x.value),
+    m: (row.metricValues ?? []).map((x) => Number(x.value) || 0),
+  }));
+
+// ── Traducciones ─────────────────────────────────────────────
+const CANALES: Record<string, string> = {
+  Direct: "Directo",
+  "Organic Search": "Búsqueda orgánica",
+  "Organic Social": "Redes sociales",
+  "Paid Social": "Redes pagadas",
+  "Paid Search": "Búsqueda pagada",
+  Referral: "Referencias",
+  Email: "Correo",
+  Unassigned: "Sin asignar",
+  "AI Assistant": "Asistentes de IA",
+  "Cross-network": "Varias redes (Google)",
+  Display: "Display",
+  "Organic Video": "Video orgánico",
+  "Paid Video": "Video pagado",
+  "Paid Other": "Otro pagado",
+  "Organic Shopping": "Shopping orgánico",
+  "Paid Shopping": "Shopping pagado",
+  SMS: "SMS",
+  Affiliates: "Afiliados",
+};
+
+const DISPOSITIVOS: Record<string, string> = {
+  mobile: "Celular",
+  desktop: "Computador",
+  tablet: "Tablet",
+  "smart tv": "Televisor",
+};
+
+// GA escribe las ciudades sin tildes; se las devolvemos a las conocidas.
+const CIUDADES: Record<string, string> = {
+  Concepcion: "Concepción",
+  Chillan: "Chillán",
+  Hualpen: "Hualpén",
+  "Los Angeles": "Los Ángeles",
+  Tome: "Tomé",
+  Quillon: "Quillón",
+  Bulnes: "Bulnes",
+  Valparaiso: "Valparaíso",
+  Vina: "Viña del Mar",
+  "Vina del Mar": "Viña del Mar",
+  Rancagua: "Rancagua",
+  Curico: "Curicó",
+  Nuble: "Ñuble",
+};
+
+/** Los eventos que configuramos en Tag Manager, con nombre de persona. */
+export const EVENTOS: Record<string, string> = {
+  eventos_cotizacion_enviada: "Cotización de evento enviada",
+  eventos_cotizar: "Apretó «Cotizar» en eventos",
+  eventos_whatsapp: "WhatsApp desde eventos",
+  cabanas_reservar: "Apretó «Reservar» en cabañas",
+  cabanas_reserva_pagada: "Reserva de cabaña pagada",
+  cabanas_whatsapp: "WhatsApp desde cabañas",
+  whatsapp_sin_linea: "WhatsApp sin línea de negocio",
+  purchase: "Compra (evento antiguo)",
+};
+
+const sinDato = (v: string) => (!v || v === "(not set)" ? "Sin dato" : v);
+
+// ── Informe del sitio ────────────────────────────────────────
+export type Totales = {
+  personas: number;
+  nuevos: number;
+  sesiones: number;
+  interactivas: number;
+  conversiones: number;
+  duracionMedia: number; // segundos por visita
+};
+
+export type DatosSitio = {
+  desde: string;
+  hasta: string;
+  actual: Totales;
+  anterior: Totales;
+  dias: Array<{ fecha: string; sesiones: number; conversiones: number; personas: number }>;
+  canales: Array<{ nombre: string; sesiones: number; conversiones: number }>;
+  fuentes: Array<{ nombre: string; sesiones: number; conversiones: number }>;
+  eventos: Array<{ clave: string; nombre: string; cantidad: number }>;
+  entradas: Array<{ pagina: string; sesiones: number; conversiones: number }>;
+  paginas: Array<[string, number]>;
+  ciudades: Array<[string, number]>;
+  dispositivos: Array<[string, number]>;
+  sistemas: Array<[string, number]>;
+};
+
+const vacios = (): Totales => ({
+  personas: 0, nuevos: 0, sesiones: 0, interactivas: 0, conversiones: 0, duracionMedia: 0,
+});
+
+async function consultarSitio(desde: string, hasta: string): Promise<DatosSitio> {
+  const previo = periodoAnterior(desde, hasta);
+  const rango = [{ startDate: desde, endDate: hasta }];
+  const top = (dim: string, metricas: string[], limite: number, orden = metricas[0]) => ({
+    dateRanges: rango,
+    dimensions: [{ name: dim }],
+    metrics: metricas.map((name) => ({ name })),
+    orderBys: [{ metric: { metricName: orden }, desc: true }],
+    limit: limite,
+  });
+
+  // GA4 acepta hasta cinco informes por llamada: van dos tandas en paralelo.
+  const [a, b] = await Promise.all([
+    llamar<{ reports: Reporte[] }>("batchRunReports", {
+      requests: [
+        {
+          dateRanges: [
+            { startDate: desde, endDate: hasta, name: "actual" },
+            { startDate: previo.desde, endDate: previo.hasta, name: "anterior" },
+          ],
+          metrics: ["activeUsers", "newUsers", "sessions", "engagedSessions", "keyEvents", "averageSessionDuration"]
+            .map((name) => ({ name })),
+        },
+        {
+          dateRanges: rango,
+          dimensions: [{ name: "date" }],
+          metrics: [{ name: "sessions" }, { name: "keyEvents" }, { name: "activeUsers" }],
+          orderBys: [{ dimension: { dimensionName: "date" } }],
+          limit: 400,
+        },
+        top("sessionDefaultChannelGroup", ["sessions", "keyEvents"], 12),
+        top("sessionSourceMedium", ["sessions", "keyEvents"], 10),
+        top("eventName", ["keyEvents"], 25),
+      ],
+    }),
+    llamar<{ reports: Reporte[] }>("batchRunReports", {
+      requests: [
+        top("landingPage", ["sessions", "keyEvents"], 10),
+        top("pageTitle", ["screenPageViews"], 10),
+        top("city", ["activeUsers"], 10),
+        top("deviceCategory", ["activeUsers"], 5),
+        top("operatingSystem", ["activeUsers"], 7),
+      ],
+    }),
+  ]);
+
+  const [rTot, rDias, rCanales, rFuentes, rEventos] = a.reports ?? [];
+  const [rEntradas, rPaginas, rCiudades, rDisp, rSo] = b.reports ?? [];
+
+  // Con dos rangos de fecha, GA agrega sola la columna del rango.
+  const totales = { actual: vacios(), anterior: vacios() };
+  for (const f of filas(rTot)) {
+    const cual = f.d[0] === "anterior" ? "anterior" : "actual";
+    const [personas, nuevos, sesiones, interactivas, conversiones, duracionMedia] = f.m;
+    totales[cual] = { personas, nuevos, sesiones, interactivas, conversiones, duracionMedia };
+  }
+
+  // Los días sin visitas no vienen en la respuesta: se rellenan con cero.
+  const porDia = new Map<string, number[]>(
+    filas(rDias).map((f) => {
+      const t = f.d[0]; // GA entrega la fecha como 20260914
+      return [`${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}`, f.m];
+    })
+  );
+  const dias: DatosSitio["dias"] = [];
+  for (let d = desde; d <= hasta; d = sumarDias(d, 1)) {
+    const m = porDia.get(d) ?? [0, 0, 0];
+    dias.push({ fecha: d, sesiones: m[0], conversiones: m[1], personas: m[2] });
+  }
+
+  const conSesiones = (r: Reporte | undefined, traducir: (v: string) => string) =>
+    filas(r).map((f) => ({ nombre: traducir(f.d[0]), sesiones: f.m[0], conversiones: f.m[1] }));
+
+  return {
+    desde,
+    hasta,
+    ...totales,
+    dias,
+    canales: conSesiones(rCanales, (v) => CANALES[v] ?? v),
+    fuentes: conSesiones(rFuentes, sinDato),
+    eventos: filas(rEventos)
+      .filter((f) => f.m[0] > 0)
+      .map((f) => ({ clave: f.d[0], nombre: EVENTOS[f.d[0]] ?? f.d[0], cantidad: f.m[0] })),
+    entradas: filas(rEntradas).map((f) => ({
+      pagina: f.d[0] === "/" ? "Portada ( / )" : sinDato(f.d[0]),
+      sesiones: f.m[0],
+      conversiones: f.m[1],
+    })),
+    paginas: filas(rPaginas).map((f) => [sinDato(f.d[0]), f.m[0]]),
+    ciudades: filas(rCiudades).map((f) => [CIUDADES[f.d[0]] ?? sinDato(f.d[0]), f.m[0]]),
+    dispositivos: filas(rDisp).map((f) => [DISPOSITIVOS[f.d[0]] ?? sinDato(f.d[0]), f.m[0]]),
+    sistemas: filas(rSo).map((f) => [f.d[0] === "iOS" ? "iPhone (iOS)" : f.d[0] === "Macintosh" ? "Mac" : sinDato(f.d[0]), f.m[0]]),
+  };
+}
+
+export const datosSitio = unstable_cache(consultarSitio, ["ga4-sitio-v1"], { revalidate: 3600 });
+
+// ── Tiempo real ──────────────────────────────────────────────
+export type Ahora = {
+  total: number;
+  porMinuto: number[]; // 30 valores, del más antiguo al más reciente
+  ciudades: Array<[string, number]>;
+  pantallas: Array<[string, number]>;
+  medidoEn: string;
+};
+
+async function consultarAhora(): Promise<Ahora> {
+  const [rMin, rCiudad, rPantalla] = await Promise.all([
+    llamar<Reporte>("runRealtimeReport", {
+      dimensions: [{ name: "minutesAgo" }],
+      metrics: [{ name: "activeUsers" }],
+      limit: 30,
+    }),
+    llamar<Reporte>("runRealtimeReport", {
+      dimensions: [{ name: "city" }],
+      metrics: [{ name: "activeUsers" }],
+      metricAggregations: ["TOTAL"],
+      limit: 8,
+    }),
+    llamar<Reporte>("runRealtimeReport", {
+      dimensions: [{ name: "unifiedScreenName" }],
+      metrics: [{ name: "activeUsers" }],
+      limit: 6,
+    }),
+  ]);
+
+  const porMinuto = new Array(30).fill(0);
+  for (const f of filas(rMin)) {
+    const hace = Number(f.d[0]);
+    if (hace >= 0 && hace < 30) porMinuto[29 - hace] = f.m[0];
+  }
+
+  const ciudades = filas(rCiudad).map((f) => [CIUDADES[f.d[0]] ?? sinDato(f.d[0]), f.m[0]] as [string, number]);
+  const total =
+    Number(rCiudad.totals?.[0]?.metricValues?.[0]?.value) ||
+    ciudades.reduce((s, c) => s + c[1], 0);
+
+  return {
+    total,
+    porMinuto,
+    ciudades,
+    pantallas: filas(rPantalla).map((f) => [sinDato(f.d[0]), f.m[0]]),
+    medidoEn: new Date().toISOString(),
+  };
+}
+
+export const ahoraMismo = unstable_cache(consultarAhora, ["ga4-ahora-v1"], { revalidate: 55 });

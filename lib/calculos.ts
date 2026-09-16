@@ -45,6 +45,20 @@ export function sumarDias(iso: string, n: number) {
   return new Date(t).toISOString().slice(0, 10);
 }
 
+/** 67 → "1 min 07 s". */
+export function duracionTexto(segundos: number) {
+  if (!isFinite(segundos) || segundos <= 0) return "—";
+  const m = Math.floor(segundos / 60);
+  const s = Math.round(segundos % 60);
+  return m > 0 ? `${m} min ${String(s).padStart(2, "0")} s` : `${s} s`;
+}
+
+/** La fecha de hoy en Chile, AAAA-MM-DD. El servidor de Vercel vive en otra
+ *  zona horaria y, sin esto, "hoy" cambia a las nueve de la noche. */
+export function hoyEnChile() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago" }).format(new Date());
+}
+
 export function diasEntre(desde: string, hasta: string) {
   const [a1, m1, d1] = desde.split("-").map(Number);
   const [a2, m2, d2] = hasta.split("-").map(Number);

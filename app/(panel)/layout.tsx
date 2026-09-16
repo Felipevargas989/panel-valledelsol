@@ -2,9 +2,11 @@ import { Suspense } from "react";
 import Vistas from "../../components/Vistas";
 import { RANGO_DATOS } from "../../lib/datos";
 import { fechaLarga } from "../../lib/calculos";
+import { ga4Conectado } from "../../lib/ga4";
 
 export default function PanelLayout({ children }: { children: React.ReactNode }) {
   const conCandado = Boolean(process.env.PANEL_CLAVE);
+  const conAnalytics = ga4Conectado();
 
   return (
     <>
@@ -18,8 +20,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
           <div className="banda-dcha">
-            <span className="sello">Datos al {fechaLarga(RANGO_DATOS.hasta)}</span>
-            <span className="sello">Carga manual · sin conectar</span>
+            {conAnalytics ? <span className="sello">● Analytics en vivo</span> : null}
+            <span className="sello">Meta y Google a mano · al {fechaLarga(RANGO_DATOS.hasta)}</span>
             {!conCandado ? <span className="sello">⚠ Sin candado</span> : null}
           </div>
         </div>

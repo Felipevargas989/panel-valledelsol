@@ -1,6 +1,10 @@
 import { Seccion, Tarjeta } from "../../../components/ui";
 import { SALUD, TAREAS } from "../../../lib/datos";
 import { FUENTES, LO_QUE_FALTA } from "../../../lib/fuentes";
+import { ga4Conectado } from "../../../lib/ga4";
+
+// Se arma en cada visita: muestra si Analytics está conectado en este momento.
+export const dynamic = "force-dynamic";
 
 const ETIQUETA_ESTADO = { bien: "Bien", vigilar: "Vigilar", falta: "Falta" } as const;
 const ETIQUETA_CAMPO = {
@@ -10,6 +14,7 @@ const ETIQUETA_CAMPO = {
 } as const;
 
 export default function Medicion() {
+  const conectadas: Record<string, boolean> = { ga4: ga4Conectado() };
   return (
     <div className="pila">
       <Seccion
@@ -54,7 +59,7 @@ export default function Medicion() {
       >
         <div className="rejilla dos">
           {FUENTES.map((f) => (
-            <Tarjeta key={f.id} titulo={f.nombre} extra={f.dificultad}>
+            <Tarjeta key={f.id} titulo={f.nombre} extra={conectadas[f.id] ? "● Conectado en vivo" : f.dificultad}>
               <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--tinta3)" }}>{f.conexion}</p>
               {f.campos.map((c) => (
                 <div className="campo-fuente" key={c.campo}>
