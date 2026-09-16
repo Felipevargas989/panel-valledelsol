@@ -14,7 +14,11 @@ const ETIQUETA_CAMPO = {
 } as const;
 
 export default function Medicion() {
-  const conectadas: Record<string, boolean> = { ga4: ga4Conectado() };
+  const enVivo = ga4Conectado();
+  // Google Ads se lee a través de Analytics, así que cae con la misma llave.
+  const conectadas: Record<string, string> = enVivo
+    ? { ga4: "● Conectado en vivo", google: "● En vivo vía Analytics" }
+    : {};
   return (
     <div className="pila">
       <Seccion
@@ -59,7 +63,7 @@ export default function Medicion() {
       >
         <div className="rejilla dos">
           {FUENTES.map((f) => (
-            <Tarjeta key={f.id} titulo={f.nombre} extra={conectadas[f.id] ? "● Conectado en vivo" : f.dificultad}>
+            <Tarjeta key={f.id} titulo={f.nombre} extra={conectadas[f.id] ?? f.dificultad}>
               <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--tinta3)" }}>{f.conexion}</p>
               {f.campos.map((c) => (
                 <div className="campo-fuente" key={c.campo}>

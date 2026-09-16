@@ -15,6 +15,7 @@
 import { createSign } from "node:crypto";
 import { unstable_cache } from "next/cache";
 import { sumarDias, periodoAnterior } from "./calculos";
+import type { DiaCampana } from "./datos";
 
 export const PROPIEDAD_GA4 = "353296129";
 
@@ -448,3 +449,82 @@ async function consultarAhora(): Promise<Ahora> {
 }
 
 export const ahoraMismo = unstable_cache(consultarAhora, ["ga4-ahora-v1"], { revalidate: 55 });
+
+// ── Google Ads, leído desde Analytics ───────────────────────
+// Analytics está vinculado con la cuenta de Google Ads desde 2023 y trae
+// gasto, clics e impresiones por campaña. Así Google Ads queda en vivo sin
+// pedirle a Google un token de desarrollador (que tarda días).
+//
+// Qué cuenta como lead en Google, para que sea comparable con la
+// conversación de WhatsApp que cuenta Meta: una cotización enviada, una
+// reserva pagada o un WhatsApp. Los clics en «Cotizar» y «Reservar» van
+// aparte como intención: muestran interés, pero la persona aún no escribió.
+// Comprobado el 16-09-2026: el 14-09 calza exacto con lo que muestra Google
+// Ads (Eventos $10.663 · 10 clics · 164 impresiones).
+
+const LEADS_GOOGLE = [
+  "eventos_cotizacion_enviada",
+  "cabanas_reserva_pagada",
+  "eventos_whatsapp",
+  "cabanas_whatsapp",
+  "whatsapp_sin_linea",
+];
+const INTENCIONES_GOOGLE = ["eventos_cotizar", "cabanas_reservar"];
+
+async function consultarGoogleAds(desde: string, hasta: string): Promise<DiaCampana[]> {
+  const rango = [{ startDate: desde, endDate: hasta }];
+  const dims = [{ name: "date" }, { name: "sessionGoogleAdsCampaignName" }];
+  const deGoogleAds = {
+    notExpression: { filter: { fieldName: "sessionGoogleAdsCampaignName", stringFilter: { value: "(not set)" } } },
+  };
+  const eventos = (lista: string[]) => ({
+    andGroup: {
+      expressions: [{ filter: { fieldName: "eventName", inListFilter: { values: lista } } }, deGoogleAds],
+    },
+  });
+
+  const r = await llamar<{ reports: Reporte[] }>("batchRunReports", {
+    requests: [
+      {
+        dateRanges: rango,
+        dimensions: dims,
+        metrics: [{ name: "advertiserAdCost" }, { name: "advertiserAdClicks" }, { name: "advertiserAdImpressions" }],
+        dimensionFilter: deGoogleAds,
+        limit: 5000,
+      },
+      { dateRanges: rango, dimensions: dims, metrics: [{ name: "keyEvents" }], dimensionFilter: eventos(LEADS_GOOGLE), limit: 5000 },
+      { dateRanges: rango, dimensions: dims, metrics: [{ name: "keyEvents" }], dimensionFilter: eventos(INTENCIONES_GOOGLE), limit: 5000 },
+    ],
+  });
+  const [rCosto, rLeads, rIntencion] = r.reports ?? [];
+
+  const mapa = new Map<string, DiaCampana>();
+  const fecha = (t: string) => `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}`;
+  const fila = (f: Fila) => {
+    const clave = `${f.d[0]}|${f.d[1]}`;
+    let x = mapa.get(clave);
+    if (!x) {
+      x = {
+        fecha: fecha(f.d[0]), canal: "google", campana: f.d[1],
+        inversion: 0, impresiones: 0, alcance: null, clics: 0, leads: 0, intenciones: 0,
+      };
+      mapa.set(clave, x);
+    }
+    return x;
+  };
+
+  for (const f of filas(rCosto)) {
+    const x = fila(f);
+    x.inversion += f.m[0];
+    x.clics += f.m[1];
+    x.impresiones += f.m[2];
+  }
+  for (const f of filas(rLeads)) fila(f).leads = (fila(f).leads ?? 0) + f.m[0];
+  for (const f of filas(rIntencion)) fila(f).intenciones = (fila(f).intenciones ?? 0) + f.m[0];
+
+  return [...mapa.values()]
+    .map((x) => ({ ...x, inversion: Math.round(x.inversion) }))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+}
+
+export const googleAdsDias = unstable_cache(consultarGoogleAds, ["ga4-gads-v1"], { revalidate: 3600 });

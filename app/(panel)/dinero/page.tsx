@@ -2,42 +2,57 @@ import { Suspense } from "react";
 import FiltroFechas from "../../../components/FiltroFechas";
 import { BarrasDia, LineaDia, ParDeGraficos } from "../../../components/graficos";
 import { Kpi, Var, Seccion, Tarjeta, ChipCanal, Leyenda } from "../../../components/ui";
-import { RANGO_DATOS, SUPUESTOS } from "../../../lib/datos";
+import { RANGO_DATOS, SUPUESTOS, ULTIMO_DIA_META, type DiaCampana } from "../../../lib/datos";
 import {
   enRango, resumir, periodoAnterior, variacion, variacionNeutra, serieDiaria, porCampana, porCanal,
-  plata, numero, porcentaje, veces, sumarDias, fechaLarga, NOMBRE_CANAL,
+  plata, numero, porcentaje, veces, sumarDias, fechaLarga, hoyEnChile, NOMBRE_CANAL,
 } from "../../../lib/calculos";
+import { ga4Conectado, googleAdsDias, explicarError } from "../../../lib/ga4";
 
 export const dynamic = "force-dynamic";
 
-const POR_DEFECTO = {
-  desde: sumarDias(RANGO_DATOS.hasta, -13),
-  hasta: RANGO_DATOS.hasta,
-};
+/** Meta sale de la carga manual; Google Ads, en vivo desde Analytics. Si
+ *  Analytics no responde, Google vuelve a la carga manual y se avisa. */
+async function filasDelPeriodo(desde: string, hasta: string) {
+  const manual = enRango(desde, hasta);
+  if (!ga4Conectado()) return { filas: manual, googleEnVivo: false, error: null as string | null };
+  try {
+    const google: DiaCampana[] = await googleAdsDias(desde, hasta);
+    return { filas: [...manual.filter((f) => f.canal === "meta"), ...google], googleEnVivo: true, error: null };
+  } catch (e) {
+    return { filas: manual, googleEnVivo: false, error: explicarError(e) };
+  }
+}
 
 export default async function Dinero({
   searchParams,
 }: {
   searchParams: Promise<{ desde?: string; hasta?: string }>;
 }) {
+  // Con Google en vivo el período llega hasta ayer (el día de hoy aún no
+  // cierra); sin conexión, hasta el último día cargado a mano.
+  const conectado = ga4Conectado();
+  const tope = conectado ? sumarDias(hoyEnChile(), -1) : RANGO_DATOS.hasta;
   const sp = await searchParams;
-  const desde = sp.desde ?? POR_DEFECTO.desde;
-  const hasta = sp.hasta ?? POR_DEFECTO.hasta;
-
-  const filas = enRango(desde, hasta);
-  const hoy = resumir(filas);
+  const hasta = sp.hasta && sp.hasta <= hoyEnChile() ? sp.hasta : tope;
+  const desde = sp.desde && sp.desde <= hasta ? sp.desde : sumarDias(hasta, -13);
 
   const previo = periodoAnterior(desde, hasta);
-  const antes = resumir(enRango(previo.desde, previo.hasta));
+  const [ahora, antesDe] = await Promise.all([
+    filasDelPeriodo(desde, hasta),
+    filasDelPeriodo(previo.desde, previo.hasta),
+  ]);
+  const filas = ahora.filas;
+  const hoy = resumir(filas);
+  const antes = resumir(antesDe.filas);
+  const metaIncompleto = ahora.googleEnVivo && hasta > ULTIMO_DIA_META;
 
   const gastoDia = serieDiaria(filas, desde, hasta, "inversion");
   const imprDia = serieDiaria(filas, desde, hasta, "impresiones");
   const clicsDia = serieDiaria(filas, desde, hasta, "clics");
 
   const campanas = porCampana(filas);
-  const campanasAntes = new Map(
-    porCampana(enRango(previo.desde, previo.hasta)).map((c) => [c.campana, c])
-  );
+  const campanasAntes = new Map(porCampana(antesDe.filas).map((c) => [c.campana, c]));
   const canales = porCanal(filas);
 
   const conviene = isFinite(hoy.cac) && hoy.cac <= hoy.comisionOta;
@@ -45,8 +60,24 @@ export default async function Dinero({
   return (
     <div className="pila">
       <Suspense fallback={<div className="filtros" style={{ minHeight: 62 }} />}>
-        <FiltroFechas desde={desde} hasta={hasta} />
+        <FiltroFechas desde={desde} hasta={hasta} min={RANGO_DATOS.desde}
+                      max={conectado ? hoyEnChile() : RANGO_DATOS.hasta} />
       </Suspense>
+
+      {ahora.error ? (
+        <div className="aviso ojo">
+          <b>Google Ads no se pudo leer en vivo; se muestra la carga manual.</b> {ahora.error}
+        </div>
+      ) : null}
+
+      {metaIncompleto ? (
+        <div className="aviso info">
+          <b>Google Ads está en vivo hasta ayer. Meta todavía se carga a mano y llega solo hasta el{" "}
+          {fechaLarga(ULTIMO_DIA_META)}.</b> Después de esa fecha no hay datos de Meta en este período (no
+          significa que haya gastado cero), así que los totales y la comparación contra el período anterior
+          quedan cortos hasta que conectemos Meta.
+        </div>
+      ) : null}
 
       <Seccion
         titulo="Los números del período"
@@ -63,7 +94,7 @@ export default async function Dinero({
                variacion={variacion(hoy.ctr, antes.ctr)} />
           <Kpi rotulo="Leads" familia="volumen" valor={numero(hoy.leads)}
                variacion={variacion(hoy.leads, antes.leads)}
-               pie="cotizaciones y conversaciones" />
+               pie="contactos reales" />
           <Kpi rotulo="Costo por lead" familia="costo" valor={plata(hoy.cpl)}
                variacion={variacion(hoy.cpl, antes.cpl, true)} />
         </div>
@@ -103,7 +134,7 @@ export default async function Dinero({
 
       <Seccion
         titulo="Campaña por campaña"
-        bajada="Ordenadas por lo que gastaron. La columna Δ compara cada campaña contra el período anterior."
+        bajada="Ordenadas por lo que gastaron. Δ compara contra el período anterior. Lead en Meta es una conversación de WhatsApp iniciada; en Google, una cotización enviada, una reserva pagada o un WhatsApp. Intención son los clics en «Cotizar» o «Reservar»: interés, pero la persona todavía no escribió."
       >
         <div className="tabla-marco">
           <table>
@@ -119,6 +150,7 @@ export default async function Dinero({
                 <th>CTR</th>
                 <th>CPC</th>
                 <th>Leads</th>
+                <th>Intención</th>
                 <th>Costo por lead</th>
                 <th>Δ</th>
               </tr>
@@ -146,6 +178,7 @@ export default async function Dinero({
                     <td className="n">{porcentaje(c.ctr)}</td>
                     <td className="n">{plata(c.cpc)}</td>
                     <td className="n">{numero(c.leads)}</td>
+                    <td className="n">{c.canal === "google" ? numero(c.intenciones) : "—"}</td>
                     <td className="n">{plata(c.cpl)}</td>
                     <td><Var v={a ? variacion(c.cpl, a.cpl, true) : null} /></td>
                   </tr>
@@ -164,6 +197,7 @@ export default async function Dinero({
                 <td className="n">{porcentaje(hoy.ctr)}</td>
                 <td className="n">{plata(hoy.cpc)}</td>
                 <td className="n">{numero(hoy.leads)}</td>
+                <td className="n">{numero(hoy.intenciones)}</td>
                 <td className="n">{plata(hoy.cpl)}</td>
                 <td><Var v={variacion(hoy.cpl, antes.cpl, true)} /></td>
               </tr>
@@ -188,6 +222,7 @@ export default async function Dinero({
                   ["CTR", porcentaje(c.ctr)],
                   ["CPC", plata(c.cpc)],
                   ["Leads", numero(c.leads)],
+                  ...(c.canal === "google" ? [["Intención", numero(c.intenciones)]] : []),
                   ["Costo por lead", plata(c.cpl)],
                 ].map(([k, v]) => (
                   <div key={k} style={{
@@ -268,9 +303,12 @@ export default async function Dinero({
       </Seccion>
 
       <p className="pie-pagina">
-        Período mostrado: {fechaLarga(desde)} – {fechaLarga(hasta)}. Datos cargados a mano el{" "}
-        {fechaLarga(RANGO_DATOS.hasta)} desde Meta y Google Ads. Las campañas de Google partieron el 14 de
-        septiembre, por eso casi todo el historial largo es solo de Meta.
+        Período mostrado: {fechaLarga(desde)} – {fechaLarga(hasta)}.{" "}
+        {ahora.googleEnVivo
+          ? "Google Ads en vivo desde Analytics, refrescado cada hora."
+          : "Google Ads cargado a mano."}{" "}
+        Meta cargado a mano hasta el {fechaLarga(ULTIMO_DIA_META)}. Las campañas actuales de Google partieron el
+        14 de septiembre.
       </p>
     </div>
   );

@@ -21,6 +21,9 @@ export type DiaCampana = {
   alcance: number | null; // Meta lo da; Google no
   clics: number;
   leads: number | null;   // null = el día aún no cierra
+  /** Clics en «Cotizar» o «Reservar»: interés, todavía no contacto.
+   *  Solo existe para Google (sale de Analytics). */
+  intenciones?: number | null;
 };
 
 // ───────────────────────────────────────────────────────────
@@ -98,6 +101,10 @@ export const DIAS: DiaCampana[] = [
 ];
 
 export const RANGO_DATOS = { desde: "2026-08-16", hasta: "2026-09-14" }; // último día cerrado
+
+/** Hasta dónde llega Meta cargado a mano. Después de esta fecha no hay datos
+ *  de Meta: no es que haya gastado cero. */
+export const ULTIMO_DIA_META = RANGO_DATOS.hasta;
 
 // ───────────────────────────────────────────────────────────
 // RADIOGRAFÍA DEL PÚBLICO

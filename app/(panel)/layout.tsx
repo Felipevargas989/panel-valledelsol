@@ -20,8 +20,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
           <div className="banda-dcha">
-            {conAnalytics ? <span className="sello">● Analytics en vivo</span> : null}
-            <span className="sello">Meta y Google a mano · al {fechaLarga(RANGO_DATOS.hasta)}</span>
+            {conAnalytics ? <span className="sello">● Analytics y Google Ads en vivo</span> : null}
+            <span className="sello">{conAnalytics ? "Meta" : "Meta y Google"} a mano · al {fechaLarga(RANGO_DATOS.hasta)}</span>
             {!conCandado ? <span className="sello">⚠ Sin candado</span> : null}
           </div>
         </div>

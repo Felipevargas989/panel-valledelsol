@@ -48,8 +48,8 @@ export const FUENTES: Fuente[] = [
   {
     id: "google",
     nombre: "Google Ads",
-    conexion: "API de Google Ads · pide un token de desarrollador",
-    dificultad: "Google lo aprueba en días; mientras tanto, carga manual",
+    conexion: "Se lee a través de Analytics, que está vinculado con la cuenta. La API propia de Google Ads (con token de desarrollador) solo haría falta para los términos de búsqueda",
+    dificultad: "Conectado vía Analytics; términos de búsqueda a mano",
     campos: [
       { campo: "Impresiones, clics, CTR y costo por día", estado: "medido" },
       { campo: "Conversiones y costo por conversión", estado: "medido" },
@@ -64,8 +64,8 @@ export const FUENTES: Fuente[] = [
   {
     id: "ga4",
     nombre: "Google Analytics (el sitio)",
-    conexion: "API de datos de GA4 · gratis",
-    dificultad: "Lo más fácil de los tres, un día",
+    conexion: "API de datos de GA4 · cuenta de servicio de solo lectura",
+    dificultad: "Conectado el 16-09",
     campos: [
       { campo: "Usuarios, sesiones y usuarios nuevos", estado: "medido" },
       { campo: "De dónde llegan (directo, buscador, redes, pago)", estado: "medido" },
@@ -73,8 +73,9 @@ export const FUENTES: Fuente[] = [
       { campo: "Celular contra computador, y sistema operativo", estado: "medido" },
       { campo: "Páginas más vistas", estado: "medido" },
       { campo: "Eventos clave: whatsapp, cotizar, reservar", estado: "medido" },
-      { campo: "Serie por día de todo lo anterior", estado: "disponible", nota: "hoy tengo el total del mes, no el día a día" },
-      { campo: "Página por la que entran y por la que se van", estado: "disponible" },
+      { campo: "Serie por día de todo lo anterior", estado: "medido", nota: "en vivo desde el 16-09" },
+      { campo: "Página por la que entran", estado: "medido" },
+      { campo: "Página por la que se van", estado: "disponible" },
       { campo: "Recorrido hasta la conversión", estado: "disponible" },
     ],
   },

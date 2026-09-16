@@ -72,6 +72,7 @@ export type Resumen = {
   alcance: number;
   clics: number;
   leads: number;
+  intenciones: number;
   ctr: number;
   cpc: number;
   cpm: number;
@@ -93,7 +94,7 @@ function supuestoDe(campana: string) {
 }
 
 export function resumir(filas: DiaCampana[]): Resumen {
-  let inversion = 0, impresiones = 0, alcance = 0, clics = 0, leads = 0;
+  let inversion = 0, impresiones = 0, alcance = 0, clics = 0, leads = 0, intenciones = 0;
   let cierres = 0, ingreso = 0;
 
   for (const f of filas) {
@@ -101,6 +102,7 @@ export function resumir(filas: DiaCampana[]): Resumen {
     impresiones += f.impresiones;
     alcance += f.alcance ?? 0;
     clics += f.clics;
+    intenciones += f.intenciones ?? 0;
     const l = f.leads ?? 0;
     leads += l;
     const s = supuestoDe(f.campana);
@@ -112,7 +114,7 @@ export function resumir(filas: DiaCampana[]): Resumen {
   const ticketMedio = cierres > 0 ? ingreso / cierres : SUPUESTOS.eventos.ticket;
 
   return {
-    inversion, impresiones, alcance, clics, leads,
+    inversion, impresiones, alcance, clics, leads, intenciones,
     ctr: impresiones > 0 ? clics / impresiones : NaN,
     cpc: clics > 0 ? inversion / clics : NaN,
     cpm: impresiones > 0 ? (inversion / impresiones) * 1000 : NaN,
