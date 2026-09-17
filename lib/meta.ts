@@ -204,3 +204,26 @@ async function consultarPublico(desde: string, hasta: string): Promise<PublicoMe
 }
 
 export const metaPublico = unstable_cache(consultarPublico, ["meta-publico-v1"], { revalidate: 3600 });
+
+// ── Totales por día, sin desglose (comparación anual) ────────
+// Para el mes a mes no hace falta saber la campaña: pedir campaña por día
+// durante año y medio son unas 1.800 filas en cuatro páginas, y eso fue lo
+// que falló en Vercel el 17-09 (el gráfico quedó mostrando solo Google).
+// Sin desglose son 600 filas: una llamada, a veces dos.
+export type DiaMeta = { fecha: string; inversion: number; impresiones: number; clics: number };
+
+async function consultarTotales(desde: string, hasta: string): Promise<DiaMeta[]> {
+  const filas = await insights({
+    time_increment: "1",
+    time_range: rango(desde, hasta),
+    fields: "spend,impressions,inline_link_clicks",
+  });
+  return filas.map((f) => ({
+    fecha: texto(f, "date_start"),
+    inversion: Math.round(cifra(f, "spend")),
+    impresiones: cifra(f, "impressions"),
+    clics: cifra(f, "inline_link_clicks"),
+  }));
+}
+
+export const metaTotalesDia = unstable_cache(consultarTotales, ["meta-totales-v1"], { revalidate: 3600 });

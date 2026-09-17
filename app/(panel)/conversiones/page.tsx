@@ -8,9 +8,11 @@ import {
   plata, numero, porcentaje, sumarDias, fechaLarga, hoyEnChile, NOMBRE_CANAL, haceUnAnio, mesesDelAnio,
 } from "../../../lib/calculos";
 import { ga4Conectado, googleAdsDias, explicarError } from "../../../lib/ga4";
-import { metaConectado, metaDias, explicarErrorMeta } from "../../../lib/meta";
+import { metaConectado, metaDias, metaTotalesDia, explicarErrorMeta } from "../../../lib/meta";
 
 export const dynamic = "force-dynamic";
+// La comparación anual pide año y medio a dos fuentes: 10 segundos no alcanzan.
+export const maxDuration = 30;
 
 /** Meta se lee de su API y Google Ads desde Analytics. Si alguna no está
  *  conectada o no responde, esa parte vuelve a la carga manual y se avisa. */
@@ -41,6 +43,31 @@ async function filasDelPeriodo(desde: string, hasta: string) {
   };
 }
 
+/** Para el mes a mes solo hacen falta los totales por día de cada canal.
+ *  Cada fuente se pide aparte: si una falla, la otra igual se muestra y el
+ *  panel lo dice, porque un gráfico con la mitad del gasto miente. */
+async function serieAnual(desde: string, hasta: string) {
+  const [meta, google] = await Promise.all([
+    metaConectado() ? metaTotalesDia(desde, hasta).catch(() => null) : Promise.resolve(null),
+    ga4Conectado() ? googleAdsDias(desde, hasta).catch(() => null) : Promise.resolve(null),
+  ]);
+  if (!meta && !google) return null;
+
+  const suma = new Map<string, { inversion: number; impresiones: number; clics: number }>();
+  const anotar = (fecha: string, inversion: number, impresiones: number, clics: number) => {
+    const x = suma.get(fecha) ?? { inversion: 0, impresiones: 0, clics: 0 };
+    x.inversion += inversion; x.impresiones += impresiones; x.clics += clics;
+    suma.set(fecha, x);
+  };
+  for (const d of meta ?? []) anotar(d.fecha, d.inversion, d.impresiones, d.clics);
+  for (const d of google ?? []) anotar(d.fecha, d.inversion, d.impresiones, d.clics);
+
+  const serie = (campo: "inversion" | "impresiones" | "clics") =>
+    [...suma.entries()].map(([fecha, x]) => ({ fecha, valor: x[campo] })).sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  return { serie, faltaMeta: metaConectado() && !meta, faltaGoogle: ga4Conectado() && !google };
+}
+
 export default async function Conversiones({
   searchParams,
 }: {
@@ -63,7 +90,7 @@ export default async function Conversiones({
     filasDelPeriodo(desde, hasta),
     filasDelPeriodo(previo.desde, previo.hasta),
     filasDelPeriodo(haceUnAnio(desde), haceUnAnio(hasta)),
-    conectado ? filasDelPeriodo(inicioAnual, tope12) : null,
+    conectado ? serieAnual(inicioAnual, tope12) : null,
   ]);
   const filas = ahora.filas;
   const hoy = resumir(filas);
@@ -79,12 +106,7 @@ export default async function Conversiones({
   const total = (xs: Array<{ total: number }>) => xs.reduce((a, d) => a + d.total, 0);
 
   const mensual = (campo: "inversion" | "impresiones" | "clics") =>
-    anual
-      ? mesesDelAnio(
-          serieDiaria(anual.filas, inicioAnual, tope12, campo).map((d) => ({ fecha: d.fecha, valor: d.total })),
-          tope12,
-        )
-      : null;
+    anual ? mesesDelAnio(anual.serie(campo), tope12) : null;
   const gastoMes = mensual("inversion");
   const imprMes = mensual("impresiones");
   const clicsMes = mensual("clics");
@@ -189,6 +211,18 @@ export default async function Conversiones({
           titulo={`Mes a mes: ${imprMes.anio} contra ${imprMes.anio - 1}`}
           bajada={`Google Ads y Meta sumados. Gris es ${imprMes.anio - 1}; oscuro, ${imprMes.anio}. El mes en curso se compara contra los mismos días del año pasado, para no poner un mes a medias contra uno completo. No cambia con el filtro de fechas.`}
         >
+          {anual?.faltaMeta || anual?.faltaGoogle ? (
+            <div className="aviso ojo" style={{ marginBottom: 14 }}>
+              <b>Ojo: estos tres gráficos están incompletos.</b>{" "}
+              {anual.faltaMeta && anual.faltaGoogle
+                ? "Ni Meta ni Google Ads respondieron."
+                : anual.faltaMeta
+                  ? "Meta no respondió, así que solo se ve Google Ads: el gasto real fue más alto."
+                  : "Google Ads no respondió, así que solo se ve Meta: el gasto real fue más alto."}{" "}
+              Se arreglan solos cuando la fuente vuelva a responder.
+            </div>
+          ) : null}
+
           {/* Uno debajo del otro: doce meses con dos barras cada uno necesitan
               el ancho completo para leerse. */}
           <div className="pila">
