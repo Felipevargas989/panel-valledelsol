@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
 const VISTAS = [
-  { href: "/dinero", texto: "Dinero", icono: "◧" },
+  { href: "/conversiones", texto: "Conversiones", icono: "◧" },
   { href: "/sitio", texto: "Sitio", icono: "◉" },
   { href: "/publico", texto: "Público", icono: "◔" },
   { href: "/medicion", texto: "Medición", icono: "◇" },

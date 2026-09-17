@@ -79,23 +79,4 @@ export const FUENTES: Fuente[] = [
       { campo: "Recorrido hasta la conversión", estado: "disponible" },
     ],
   },
-  {
-    id: "eventia",
-    nombre: "Eventia (tu base de datos)",
-    conexion: "Consulta directa a la base",
-    dificultad: "Es tuya; el trabajo es decidir qué mostrar",
-    campos: [
-      { campo: "Cotizaciones reales con monto real", estado: "pendiente", nota: "esto reemplaza el «ingreso estimado» por plata de verdad" },
-      { campo: "De dónde llegó cada lead", estado: "pendiente", nota: "ya existe en la ficha desde la migración 110" },
-      { campo: "Tipo de cliente y tipo de evento", estado: "pendiente" },
-      { campo: "Estado de la cotización: enviada, cerrada, perdida", estado: "pendiente" },
-      { campo: "Cierre real y ticket real, sin suponer", estado: "pendiente" },
-    ],
-  },
 ];
-
-// Lo único que hoy el panel no puede saber de verdad.
-export const LO_QUE_FALTA =
-  "El ingreso. Hoy se estima multiplicando leads por una tasa de cierre y un " +
-  "ticket promedio. Eventia tiene el número real: cuando se conecte, el " +
-  "retorno deja de ser una estimación y pasa a ser un hecho.";

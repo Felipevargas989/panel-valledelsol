@@ -24,6 +24,8 @@ const COLOR = {
   meta: "var(--meta)",
   sitio: "var(--sitio)",
   otro: "var(--otro)",
+  // Google y Meta sumados: sin color de canal, para no sugerir que es uno solo.
+  total: "var(--tinta)",
 } as const;
 
 export type ClaveColor = keyof typeof COLOR;
@@ -132,21 +134,28 @@ export function LineaDia({
   color = "google",
   formato: nombreFormato,
   alto = 170,
+  comparar,
 }: {
   datos: Array<{ fecha: string; valor: number }>;
   color?: ClaveColor;
   formato: NombreFormato;
   alto?: number;
+  /** Misma medida hace un año, día por día y en el mismo orden. Comparte el
+   *  eje porque es la misma unidad: no rompe la regla de una sola escala. */
+  comparar?: Array<{ fecha: string; valor: number }>;
 }) {
   const formato = FORMATO[nombreFormato];
   const [sobre, setSobre] = useState<number | null>(null);
   const W = 860, H = alto;
   const L = 54, R = 10, T = 12, B = 28;
   const ancho = W - L - R, altoPlot = H - T - B;
-  const { tope, marcas } = techo(Math.max(...datos.map((d) => d.valor), 1));
+  const previo = comparar && comparar.length === datos.length ? comparar : null;
+  const { tope, marcas } = techo(Math.max(...datos.map((d) => d.valor), ...(previo ?? []).map((d) => d.valor), 1));
   const x = (i: number) => L + (datos.length <= 1 ? ancho / 2 : (i / (datos.length - 1)) * ancho);
   const y = (v: number) => T + altoPlot - (v / tope) * altoPlot;
-  const linea = datos.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(d.valor).toFixed(1)}`).join(" ");
+  const trazo = (serie: Array<{ valor: number }>) =>
+    serie.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(d.valor).toFixed(1)}`).join(" ");
+  const linea = trazo(datos);
   const area = `${linea} L${x(datos.length - 1).toFixed(1)},${T + altoPlot} L${x(0).toFixed(1)},${T + altoPlot} Z`;
   const cada = Math.max(1, Math.ceil(datos.length / 9));
   const c = COLOR[color];
@@ -168,10 +177,17 @@ export function LineaDia({
           </g>
         ))}
         <path d={area} fill={`url(#deg-${color})`} />
+        {previo ? (
+          <path d={trazo(previo)} fill="none" stroke={COLOR_ANTERIOR} strokeWidth="1.75"
+                strokeDasharray="5 4" strokeLinejoin="round" strokeLinecap="round" />
+        ) : null}
         <path d={linea} fill="none" stroke={c} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         {sobre !== null && (
           <>
             <line x1={x(sobre)} x2={x(sobre)} y1={T} y2={T + altoPlot} stroke={c} strokeWidth="1" strokeDasharray="3 3" opacity=".55" />
+            {previo ? (
+              <circle cx={x(sobre)} cy={y(previo[sobre].valor)} r="4" fill={COLOR_ANTERIOR} stroke="var(--tarjeta)" strokeWidth="2" />
+            ) : null}
             <circle cx={x(sobre)} cy={y(datos[sobre].valor)} r="5" fill={c} stroke="var(--tarjeta)" strokeWidth="2" />
           </>
         )}
@@ -191,7 +207,112 @@ export function LineaDia({
       </svg>
       {sobre !== null && datos[sobre] && (
         <Globo izq={(x(sobre) / W) * 100} titulo={fechaCorta(datos[sobre].fecha)}
-               filas={[["Valor", formato(datos[sobre].valor), c]]} />
+               filas={
+                 previo
+                   ? [
+                       ["Este año", formato(datos[sobre].valor), c],
+                       [`Hace un año (${fechaCorta(previo[sobre].fecha)})`, formato(previo[sobre].valor), COLOR_ANTERIOR],
+                     ]
+                   : [["Valor", formato(datos[sobre].valor), c]]
+               } />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Mes a mes: este año contra el anterior
+// ─────────────────────────────────────────────────────────────
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/** El año anterior va siempre en gris: es contexto, no protagonista. */
+export const COLOR_ANTERIOR = "#98a3b8";
+
+export function MesesAnio({
+  anio,
+  actual,
+  anterior,
+  mesEnCurso,
+  diaEnCurso,
+  color = "google",
+  formato: nombreFormato,
+  alto = 210,
+}: {
+  anio: number;
+  actual: Array<number | null>;
+  anterior: number[];
+  mesEnCurso: number;
+  diaEnCurso: number;
+  color?: ClaveColor;
+  formato: NombreFormato;
+  alto?: number;
+}) {
+  const formato = FORMATO[nombreFormato];
+  const [sobre, setSobre] = useState<number | null>(null);
+  const W = 860, H = alto;
+  const L = 54, R = 10, T = 12, B = 28;
+  const ancho = W - L - R, altoPlot = H - T - B;
+  const { tope, marcas } = techo(Math.max(...anterior, ...actual.map((v) => v ?? 0), 1));
+  const paso = ancho / 12;
+  const barra = Math.max(4, Math.min(24, (paso - 10) / 2));
+  const y = (v: number) => T + altoPlot - (v / tope) * altoPlot;
+  const base = T + altoPlot;
+  const c = COLOR[color];
+
+  const cambio = (i: number) => {
+    const a = actual[i], p = anterior[i];
+    if (a === null || !p) return null;
+    const v = (a - p) / p;
+    return `${v >= 0 ? "▲" : "▼"} ${Math.abs(Math.round(v * 100))} %`;
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img"
+           aria-label={`Mes a mes, ${anio} contra ${anio - 1}`}>
+        {marcas.map((m) => (
+          <g key={m}>
+            <line x1={L} x2={W - R} y1={y(m)} y2={y(m)} stroke="var(--borde)" strokeWidth="1" />
+            <text x={L - 8} y={y(m) + 4} textAnchor="end" fontSize="10.5" fill="var(--tinta3)"
+                  fontFamily="var(--mono)">{corto(m)}</text>
+          </g>
+        ))}
+        {MESES.map((nombre, i) => {
+          const x0 = L + i * paso + paso / 2;
+          const apagado = sobre !== null && sobre !== i ? .38 : 1;
+          const a = actual[i];
+          const enCurso = i === mesEnCurso;
+          return (
+            <g key={nombre}>
+              {anterior[i] > 0 && (
+                <rect x={x0 - barra - 1} y={y(anterior[i])} width={barra} height={base - y(anterior[i])}
+                      fill={COLOR_ANTERIOR} rx="3" opacity={apagado} />
+              )}
+              {a !== null && a > 0 && (
+                <rect x={x0 + 1} y={y(a)} width={barra} height={base - y(a)}
+                      fill={c} rx="3" opacity={apagado * (enCurso ? .55 : 1)} />
+              )}
+              <text x={x0} y={H - 9} textAnchor="middle" fontSize="10.5"
+                    fill={enCurso ? "var(--tinta)" : "var(--tinta3)"} fontWeight={enCurso ? 600 : 400}>
+                {enCurso ? `${nombre} (al ${diaEnCurso})` : nombre}
+              </text>
+              <rect x={L + i * paso} y={T} width={paso} height={altoPlot} fill="transparent"
+                    onMouseEnter={() => setSobre(i)} onMouseLeave={() => setSobre(null)} />
+            </g>
+          );
+        })}
+        <line x1={L} x2={W - R} y1={base} y2={base} stroke="var(--borde2)" strokeWidth="1" />
+      </svg>
+      {sobre !== null && (
+        <Globo
+          izq={((L + sobre * paso + paso / 2) / W) * 100}
+          titulo={sobre === mesEnCurso ? `${MESES[sobre]}, del 1 al ${diaEnCurso}` : MESES[sobre]}
+          filas={[
+            [String(anio), actual[sobre] === null ? "todavía no llega" : formato(actual[sobre]), c],
+            [String(anio - 1), formato(anterior[sobre]), COLOR_ANTERIOR],
+            ...(cambio(sobre) ? [["Cambio", cambio(sobre)!, "transparent"] as const] : []),
+          ]}
+        />
       )}
     </div>
   );

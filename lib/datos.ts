@@ -287,13 +287,3 @@ export const TAREAS: Array<{ que: string; como: string }> = [
   },
 ];
 
-// ───────────────────────────────────────────────────────────
-// SUPUESTOS DEL NEGOCIO
-// Eventos: medidos en Eventia. Cabañas: punto de partida por confirmar —
-// una conversación de WhatsApp no vale lo mismo que una cotización de evento.
-// ───────────────────────────────────────────────────────────
-export const SUPUESTOS = {
-  eventos: { cierre: 0.4, ticket: 2800000, medido: true },
-  cabanas: { cierre: 0.1, ticket: 150000, medido: false },
-  comisionOta: 0.15,
-};

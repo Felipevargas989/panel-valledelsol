@@ -1,11 +1,11 @@
 import { Suspense } from "react";
 import FiltroFechas from "../../../components/FiltroFechas";
-import { BarrasDia, LineaDia, ParDeGraficos } from "../../../components/graficos";
+import { BarrasDia, LineaDia, MesesAnio, ParDeGraficos, COLOR_ANTERIOR } from "../../../components/graficos";
 import { Kpi, Var, Seccion, Tarjeta, ChipCanal, Leyenda } from "../../../components/ui";
-import { RANGO_DATOS, SUPUESTOS, ULTIMO_DIA_META, type DiaCampana } from "../../../lib/datos";
+import { RANGO_DATOS, ULTIMO_DIA_META, type DiaCampana } from "../../../lib/datos";
 import {
   enRango, resumir, periodoAnterior, variacion, variacionNeutra, serieDiaria, porCampana, porCanal,
-  plata, numero, porcentaje, veces, sumarDias, fechaLarga, hoyEnChile, NOMBRE_CANAL,
+  plata, numero, porcentaje, sumarDias, fechaLarga, hoyEnChile, NOMBRE_CANAL, haceUnAnio, mesesDelAnio,
 } from "../../../lib/calculos";
 import { ga4Conectado, googleAdsDias, explicarError } from "../../../lib/ga4";
 import { metaConectado, metaDias, explicarErrorMeta } from "../../../lib/meta";
@@ -41,7 +41,7 @@ async function filasDelPeriodo(desde: string, hasta: string) {
   };
 }
 
-export default async function Dinero({
+export default async function Conversiones({
   searchParams,
 }: {
   searchParams: Promise<{ desde?: string; hasta?: string }>;
@@ -55,34 +55,47 @@ export default async function Dinero({
   const desde = sp.desde && sp.desde <= hasta ? sp.desde : sumarDias(hasta, -13);
 
   const previo = periodoAnterior(desde, hasta);
-  const [ahora, antesDe] = await Promise.all([
+  // Para el mes a mes: desde el 1 de enero del año pasado hasta el último día
+  // cerrado. Queda en caché una hora, igual que el resto.
+  const tope12 = conectado ? sumarDias(hoyEnChile(), -1) : RANGO_DATOS.hasta;
+  const inicioAnual = `${Number(tope12.slice(0, 4)) - 1}-01-01`;
+  const [ahora, antesDe, haceAnio, anual] = await Promise.all([
     filasDelPeriodo(desde, hasta),
     filasDelPeriodo(previo.desde, previo.hasta),
+    filasDelPeriodo(haceUnAnio(desde), haceUnAnio(hasta)),
+    conectado ? filasDelPeriodo(inicioAnual, tope12) : null,
   ]);
   const filas = ahora.filas;
   const hoy = resumir(filas);
   const antes = resumir(antesDe.filas);
   const metaIncompleto = !ahora.metaEnVivo && conectado && hasta > ULTIMO_DIA_META;
-  // Las conversaciones de Paseos o Matrimonios entran al retorno con el cierre
-  // de eventos, que está medido sobre cotizaciones y no sobre conversaciones.
-  const conversacionesEventosMeta = filas
-    .filter((f) => f.canal === "meta" && !/caba/i.test(f.campana))
-    .reduce((a, f) => a + (f.leads ?? 0), 0);
 
   const gastoDia = serieDiaria(filas, desde, hasta, "inversion");
   const imprDia = serieDiaria(filas, desde, hasta, "impresiones");
   const clicsDia = serieDiaria(filas, desde, hasta, "clics");
+  const imprAnio = serieDiaria(haceAnio.filas, haceUnAnio(desde), haceUnAnio(hasta), "impresiones");
+  const clicsAnio = serieDiaria(haceAnio.filas, haceUnAnio(desde), haceUnAnio(hasta), "clics");
+  const hayAnio = haceAnio.filas.length > 0;
+  const total = (xs: Array<{ total: number }>) => xs.reduce((a, d) => a + d.total, 0);
+
+  const mensual = (campo: "impresiones" | "clics") =>
+    anual
+      ? mesesDelAnio(
+          serieDiaria(anual.filas, inicioAnual, tope12, campo).map((d) => ({ fecha: d.fecha, valor: d.total })),
+          tope12,
+        )
+      : null;
+  const imprMes = mensual("impresiones");
+  const clicsMes = mensual("clics");
 
   const campanas = porCampana(filas);
   const campanasAntes = new Map(porCampana(antesDe.filas).map((c) => [c.campana, c]));
   const canales = porCanal(filas);
 
-  const conviene = isFinite(hoy.cac) && hoy.cac <= hoy.comisionOta;
-
   return (
     <div className="pila">
       <Suspense fallback={<div className="filtros" style={{ minHeight: 62 }} />}>
-        <FiltroFechas desde={desde} hasta={hasta} min={conectado ? "2026-01-01" : RANGO_DATOS.desde}
+        <FiltroFechas desde={desde} hasta={hasta} min={conectado ? "2025-01-01" : RANGO_DATOS.desde}
                       max={conectado ? hoyEnChile() : RANGO_DATOS.hasta} />
       </Suspense>
 
@@ -141,23 +154,55 @@ export default async function Dinero({
 
       <Seccion
         titulo="Cuánta gente vio y cuánta entró"
-        bajada="Van en dos gráficos separados a propósito. Ponerlos juntos obliga a usar dos escalas distintas en un mismo dibujo, y eso hace que dos líneas se vean pegadas aunque no tengan ninguna relación."
+        bajada={
+          hayAnio
+            ? "La línea oscura es este período; la gris punteada, los mismos días de la semana hace un año. Impresiones y clics van en gráficos separados porque tienen tamaños muy distintos."
+            : "Van en dos gráficos separados a propósito: impresiones y clics tienen tamaños muy distintos, y juntarlos obliga a usar dos escalas en un mismo dibujo."
+        }
       >
         <ParDeGraficos
           a={
-            <Tarjeta titulo="Impresiones por día" extra="cuántas veces se mostró">
+            <Tarjeta titulo="Impresiones por día" extra={hayAnio ? varAnio(total(imprDia), total(imprAnio)) : "cuántas veces se mostró"}>
               <LineaDia datos={imprDia.map((d) => ({ fecha: d.fecha, valor: d.total }))}
-                        color="google" formato="numero" />
+                        comparar={hayAnio ? imprAnio.map((d) => ({ fecha: d.fecha, valor: d.total })) : undefined}
+                        color="total" formato="numero" />
             </Tarjeta>
           }
           b={
-            <Tarjeta titulo="Clics por día" extra="cuántas veces lo apretaron">
+            <Tarjeta titulo="Clics por día" extra={hayAnio ? varAnio(total(clicsDia), total(clicsAnio)) : "cuántas veces lo apretaron"}>
               <LineaDia datos={clicsDia.map((d) => ({ fecha: d.fecha, valor: d.total }))}
-                        color="meta" formato="numero" />
+                        comparar={hayAnio ? clicsAnio.map((d) => ({ fecha: d.fecha, valor: d.total })) : undefined}
+                        color="total" formato="numero" />
             </Tarjeta>
           }
         />
+        {hayAnio ? (
+          <div style={{ marginTop: 12 }}>
+            <Leyenda items={[["Este período", "var(--tinta)"], ["Hace un año", COLOR_ANTERIOR]]} />
+          </div>
+        ) : null}
       </Seccion>
+
+      {imprMes && clicsMes ? (
+        <Seccion
+          titulo={`Mes a mes: ${imprMes.anio} contra ${imprMes.anio - 1}`}
+          bajada={`Google Ads y Meta sumados. Gris es ${imprMes.anio - 1}; oscuro, ${imprMes.anio}. El mes en curso se compara contra los mismos días del año pasado, para no poner un mes a medias contra uno completo. No cambia con el filtro de fechas.`}
+        >
+          {/* Uno debajo del otro: doce meses con dos barras cada uno necesitan
+              el ancho completo para leerse. */}
+          <div className="pila">
+            <Tarjeta titulo="Impresiones por mes" nota={notaMeses(imprMes, "impresiones")}>
+              <MesesAnio {...imprMes} color="total" formato="numero" />
+            </Tarjeta>
+            <Tarjeta titulo="Clics por mes" nota={notaMeses(clicsMes, "clics")}>
+              <MesesAnio {...clicsMes} color="total" formato="numero" />
+            </Tarjeta>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <Leyenda items={[[String(imprMes.anio), "var(--tinta)"], [String(imprMes.anio - 1), COLOR_ANTERIOR]]} />
+          </div>
+        </Seccion>
+      ) : null}
 
       <Seccion
         titulo="Campaña por campaña"
@@ -266,76 +311,6 @@ export default async function Dinero({
         </div>
       </Seccion>
 
-      <Seccion
-        titulo="Retorno estimado"
-        bajada="Esta es la única parte del panel que no es un hecho medido. Sale de multiplicar los leads por una tasa de cierre y un ticket promedio."
-      >
-        <div className="aviso ojo" style={{ marginBottom: 14 }}>
-          <b>Léelo con pinzas.</b> El cierre de eventos ({Math.round(SUPUESTOS.eventos.cierre * 100)} % sobre
-          un ticket de {plata(SUPUESTOS.eventos.ticket)}) está medido en Eventia. El de cabañas
-          ({Math.round(SUPUESTOS.cabanas.cierre * 100)} % sobre {plata(SUPUESTOS.cabanas.ticket)}) es un punto
-          de partida sin confirmar: no sabemos cuántas conversaciones de WhatsApp terminan en una estadía real.
-          Hasta que conectemos Eventia, este número sirve para comparar semanas entre sí, no para decir
-          cuánta plata entró.
-          {conversacionesEventosMeta > 0 ? (
-            <>
-              {" "}Además, {numero(conversacionesEventosMeta)} conversaciones de WhatsApp de las campañas de eventos
-              de Meta entran con el cierre de eventos, que está medido sobre cotizaciones y no sobre
-              conversaciones: por ese lado el ingreso estimado sale inflado.
-            </>
-          ) : null}
-        </div>
-        <div className="rejilla tres">
-          <Tarjeta titulo="Si los supuestos fueran ciertos">
-            <div className="barras">
-              {[
-                ["Leads del período", numero(hoy.leads)],
-                ["Cierres estimados", numero(hoy.cierres)],
-                ["Ingreso estimado", plata(hoy.ingreso)],
-                ["Invertido", plata(hoy.inversion)],
-                ["Diferencia", plata(hoy.ingreso - hoy.inversion)],
-                ["Roas", veces(hoy.roas)],
-              ].map(([k, v]) => (
-                <div key={k} style={{
-                  display: "flex", justifyContent: "space-between", gap: 12,
-                  padding: "6px 0", borderBottom: "1px dotted var(--borde)", fontSize: 13,
-                }}>
-                  <span style={{ color: "var(--tinta2)" }}>{k}</span>
-                  <b style={{ fontFamily: "var(--mono)" }}>{v}</b>
-                </div>
-              ))}
-            </div>
-          </Tarjeta>
-
-          <Tarjeta titulo="Contra la comisión de Booking"
-                   nota="Booking se lleva el 15 % de cada reserva. Si conseguir un cliente por publicidad cuesta menos que esa comisión, conviene la pauta. Si cuesta más, conviene pagarle a Booking.">
-            <div className="barras">
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13 }}>
-                <span style={{ color: "var(--tinta2)" }}>Costo por cliente (CAC)</span>
-                <b style={{ fontFamily: "var(--mono)" }}>{plata(hoy.cac)}</b>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13 }}>
-                <span style={{ color: "var(--tinta2)" }}>Comisión de Booking</span>
-                <b style={{ fontFamily: "var(--mono)" }}>{plata(hoy.comisionOta)}</b>
-              </div>
-              <div style={{ marginTop: 10 }}>
-                <span className={`marca-estado ${conviene ? "bien" : "falta"}`}>
-                  {isFinite(hoy.cac) ? (conviene ? "Conviene la pauta" : "Conviene Booking") : "Sin leads en el período"}
-                </span>
-              </div>
-            </div>
-          </Tarjeta>
-
-          <Tarjeta titulo="Lo que falta para que sea un hecho"
-                   nota="Cuando Eventia entregue las cotizaciones reales, este bloque deja de ser una estimación y pasa a ser plata contada.">
-            <p style={{ margin: 0, fontSize: 13, color: "var(--tinta2)" }}>
-              Eventia ya guarda de dónde llegó cada lead, el monto de cada cotización y si se cerró o se perdió.
-              Con eso el retorno se calcula con los números de verdad y estos supuestos se borran.
-            </p>
-          </Tarjeta>
-        </div>
-      </Seccion>
-
       <p className="pie-pagina">
         Período mostrado: {fechaLarga(desde)} – {fechaLarga(hasta)}.{" "}
         {ahora.metaEnVivo
@@ -348,6 +323,22 @@ export default async function Dinero({
       </p>
     </div>
   );
+}
+
+/** Lo que va del año contra el mismo tramo del año anterior. */
+function notaMeses(m: ReturnType<typeof mesesDelAnio>, que: string) {
+  const hoy = m.actual.reduce<number>((t, v) => t + (v ?? 0), 0);
+  const antes = m.anterior.slice(0, m.mesEnCurso + 1).reduce((t, v) => t + v, 0);
+  if (!antes) return undefined;
+  const v = (hoy - antes) / antes;
+  return `En lo que va de ${m.anio} van ${numero(hoy)} ${que}; a la misma fecha de ${m.anio - 1} iban ${numero(antes)} (${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v * 100))} %).`;
+}
+
+/** «▲ 12 % vs. hace un año», para la esquina de la tarjeta. */
+function varAnio(actual: number, anterior: number) {
+  if (!anterior) return "sin datos hace un año";
+  const v = (actual - anterior) / anterior;
+  return `${v >= 0 ? "▲" : "▼"} ${Math.abs(Math.round(v * 100))} % vs. hace un año`;
 }
 
 /** Tiñe la celda según su peso dentro del total, como en la tabla de

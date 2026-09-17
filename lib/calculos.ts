@@ -1,4 +1,4 @@
-import { DIAS, SUPUESTOS, type Canal, type DiaCampana } from "./datos";
+import { DIAS, type Canal, type DiaCampana } from "./datos";
 
 // ── Formato chileno ──────────────────────────────────────────
 const CLP = new Intl.NumberFormat("es-CL", {
@@ -78,24 +78,10 @@ export type Resumen = {
   cpm: number;
   conversion: number;
   cpl: number;
-  cierres: number;
-  ingreso: number;
-  roas: number;
-  roi: number;
-  cac: number;
-  comisionOta: number;
 };
-
-/** Una campaña con «cabañas» en el nombre vale según los supuestos de
- *  cabañas; el resto, según los de eventos. Sumarlas con un solo supuesto
- *  infla el retorno de forma absurda. */
-function supuestoDe(campana: string) {
-  return /caba/i.test(campana) ? SUPUESTOS.cabanas : SUPUESTOS.eventos;
-}
 
 export function resumir(filas: DiaCampana[]): Resumen {
   let inversion = 0, impresiones = 0, alcance = 0, clics = 0, leads = 0, intenciones = 0;
-  let cierres = 0, ingreso = 0;
 
   for (const f of filas) {
     inversion += f.inversion;
@@ -103,15 +89,8 @@ export function resumir(filas: DiaCampana[]): Resumen {
     alcance += f.alcance ?? 0;
     clics += f.clics;
     intenciones += f.intenciones ?? 0;
-    const l = f.leads ?? 0;
-    leads += l;
-    const s = supuestoDe(f.campana);
-    const c = l * s.cierre;
-    cierres += c;
-    ingreso += c * s.ticket;
+    leads += f.leads ?? 0;
   }
-
-  const ticketMedio = cierres > 0 ? ingreso / cierres : SUPUESTOS.eventos.ticket;
 
   return {
     inversion, impresiones, alcance, clics, leads, intenciones,
@@ -120,12 +99,6 @@ export function resumir(filas: DiaCampana[]): Resumen {
     cpm: impresiones > 0 ? (inversion / impresiones) * 1000 : NaN,
     conversion: clics > 0 ? leads / clics : NaN,
     cpl: leads > 0 ? inversion / leads : NaN,
-    cierres,
-    ingreso,
-    roas: inversion > 0 ? ingreso / inversion : NaN,
-    roi: inversion > 0 ? (ingreso - inversion) / inversion : NaN,
-    cac: cierres > 0 ? inversion / cierres : NaN,
-    comisionOta: ticketMedio * SUPUESTOS.comisionOta,
   };
 }
 
@@ -211,3 +184,32 @@ export const NOMBRE_CANAL: Record<Canal, string> = {
   google: "Google Ads",
   meta: "Meta",
 };
+
+// ── Contra el año anterior ───────────────────────────────────
+/** El mismo día de la semana, hace un año: 364 días atrás. Comparar el 14 de
+ *  septiembre contra el 14 de septiembre pone un sábado contra un domingo, y
+ *  en un lugar de fin de semana eso solo mete ruido. */
+export const haceUnAnio = (iso: string) => sumarDias(iso, -364);
+
+export type MesesDelAnio = {
+  anio: number;
+  actual: Array<number | null>;   // null = mes que todavía no llega
+  anterior: number[];
+  mesEnCurso: number;             // 0 = enero
+  diaEnCurso: number;             // hasta qué día va el mes en curso
+};
+
+/** Suma una serie diaria por mes calendario, este año contra el anterior.
+ *  El mes en curso se compara contra los mismos días del año anterior: si
+ *  septiembre va al 16, el año pasado también se corta el 16. */
+export function mesesDelAnio(serie: Array<{ fecha: string; valor: number }>, hasta: string): MesesDelAnio {
+  const [anio, mes, dia] = hasta.split("-").map(Number);
+  const actual: Array<number | null> = Array.from({ length: 12 }, (_, i) => (i < mes ? 0 : null));
+  const anterior = Array.from({ length: 12 }, () => 0);
+  for (const { fecha, valor } of serie) {
+    const [a, m, d] = fecha.split("-").map(Number);
+    if (a === anio && fecha <= hasta) actual[m - 1] = (actual[m - 1] ?? 0) + valor;
+    if (a === anio - 1 && (m !== mes || d <= dia)) anterior[m - 1] += valor;
+  }
+  return { anio, actual, anterior, mesEnCurso: mes - 1, diaEnCurso: dia };
+}

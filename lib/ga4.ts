@@ -528,3 +528,23 @@ async function consultarGoogleAds(desde: string, hasta: string): Promise<DiaCamp
 }
 
 export const googleAdsDias = unstable_cache(consultarGoogleAds, ["ga4-gads-v1"], { revalidate: 3600 });
+
+// ── Visitas por día, para comparar contra el año anterior ────
+// Solo sesiones: es liviano y sirve igual para la línea «hace un año» y para
+// el mes a mes. Los días sin visitas se rellenan con cero.
+async function consultarVisitas(desde: string, hasta: string): Promise<Array<{ fecha: string; valor: number }>> {
+  const r = await llamar<Reporte>("runReport", {
+    dateRanges: [{ startDate: desde, endDate: hasta }],
+    dimensions: [{ name: "date" }],
+    metrics: [{ name: "sessions" }],
+    limit: 1000,
+  });
+  const porDia = new Map(filas(r).map((f) => [f.d[0], f.m[0]]));
+  const serie: Array<{ fecha: string; valor: number }> = [];
+  for (let d = desde; d <= hasta; d = sumarDias(d, 1)) {
+    serie.push({ fecha: d, valor: porDia.get(d.replaceAll("-", "")) ?? 0 });
+  }
+  return serie;
+}
+
+export const visitasPorDia = unstable_cache(consultarVisitas, ["ga4-visitas-v1"], { revalidate: 3600 });

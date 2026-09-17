@@ -1,11 +1,12 @@
 import { Suspense } from "react";
 import FiltroFechas from "../../../components/FiltroFechas";
 import Ahora from "../../../components/Ahora";
-import { BarrasH, LineaDia, ParDeGraficos, type FilaBarra } from "../../../components/graficos";
-import { Kpi, Seccion, Tarjeta } from "../../../components/ui";
-import { datosSitio, ga4Conectado, explicarError, type DatosSitio } from "../../../lib/ga4";
+import { BarrasH, LineaDia, MesesAnio, ParDeGraficos, COLOR_ANTERIOR, type FilaBarra } from "../../../components/graficos";
+import { Kpi, Seccion, Tarjeta, Leyenda } from "../../../components/ui";
+import { datosSitio, visitasPorDia, ga4Conectado, explicarError, type DatosSitio } from "../../../lib/ga4";
 import {
   variacion, numero, porcentaje, sumarDias, fechaLarga, hoyEnChile, duracionTexto as duracion,
+  haceUnAnio, mesesDelAnio,
 } from "../../../lib/calculos";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,13 @@ export default async function Sitio({
   const desde = sp.desde && sp.desde <= hasta ? sp.desde : sumarDias(hasta, -27);
 
   let d: DatosSitio;
+  // La línea de hace un año y el mes a mes son extras: si fallan, la vista
+  // sigue igual sin ellos.
+  const inicioAnual = `${Number(ayer.slice(0, 4)) - 1}-01-01`;
+  const [anio, anual] = await Promise.all([
+    visitasPorDia(haceUnAnio(desde), haceUnAnio(hasta)).catch(() => null),
+    visitasPorDia(inicioAnual, ayer).catch(() => null),
+  ]);
   try {
     d = await datosSitio(desde, hasta);
   } catch (e) {
@@ -58,6 +66,9 @@ export default async function Sitio({
       color: e.nuestra ? "sitio" : "otro",
     }));
   const heredadas = d.conversionesAnalytics - a.conversiones;
+  const meses = anual ? mesesDelAnio(anual, ayer) : null;
+  const visitasAnio = anio ? anio.reduce((t, x) => t + x.valor, 0) : 0;
+  const cambioAnio = visitasAnio > 0 ? (a.sesiones - visitasAnio) / visitasAnio : NaN;
 
   return (
     <div className="pila">
@@ -96,12 +107,28 @@ export default async function Sitio({
         </div>
       </Seccion>
 
-      <Seccion titulo="Día a día" bajada="Visitas y conversiones separadas, cada una con su propia escala.">
+      <Seccion
+        titulo="Día a día"
+        bajada={
+          anio
+            ? "Visitas y conversiones separadas, cada una con su propia escala. En visitas, la línea gris punteada son los mismos días de la semana hace un año. Las conversiones no se comparan: las que configuramos existen recién desde septiembre."
+            : "Visitas y conversiones separadas, cada una con su propia escala."
+        }
+      >
         <ParDeGraficos
           a={
-            <Tarjeta titulo="Visitas por día" extra="sesiones">
+            <Tarjeta titulo="Visitas por día"
+                     extra={anio && isFinite(cambioAnio)
+                       ? `${cambioAnio >= 0 ? "▲" : "▼"} ${Math.abs(Math.round(cambioAnio * 100))} % vs. hace un año`
+                       : "sesiones"}>
               <LineaDia datos={d.dias.map((x) => ({ fecha: x.fecha, valor: x.sesiones }))}
+                        comparar={anio ?? undefined}
                         color="sitio" formato="numero" />
+              {anio ? (
+                <div style={{ marginTop: 10 }}>
+                  <Leyenda items={[["Este período", "var(--sitio)"], ["Hace un año", COLOR_ANTERIOR]]} />
+                </div>
+              ) : null}
             </Tarjeta>
           }
           b={
@@ -112,6 +139,20 @@ export default async function Sitio({
           }
         />
       </Seccion>
+
+      {meses ? (
+        <Seccion
+          titulo={`Visitas mes a mes: ${meses.anio} contra ${meses.anio - 1}`}
+          bajada={`Gris es ${meses.anio - 1}; verde, ${meses.anio}. El mes en curso se compara contra los mismos días del año pasado. No cambia con el filtro de fechas.`}
+        >
+          <Tarjeta nota={notaMeses(meses)}>
+            <MesesAnio {...meses} color="sitio" formato="numero" />
+            <div style={{ marginTop: 10 }}>
+              <Leyenda items={[[String(meses.anio), "var(--sitio)"], [String(meses.anio - 1), COLOR_ANTERIOR]]} />
+            </div>
+          </Tarjeta>
+        </Seccion>
+      ) : null}
 
       <Seccion
         titulo="Qué conversiones hubo"
@@ -183,4 +224,13 @@ function SinConectar() {
       </div>
     </div>
   );
+}
+
+/** Lo que va del año contra el mismo tramo del año anterior. */
+function notaMeses(m: ReturnType<typeof mesesDelAnio>) {
+  const hoy = m.actual.reduce<number>((t, v) => t + (v ?? 0), 0);
+  const antes = m.anterior.slice(0, m.mesEnCurso + 1).reduce((t, v) => t + v, 0);
+  if (!antes) return undefined;
+  const v = (hoy - antes) / antes;
+  return `En lo que va de ${m.anio} el sitio lleva ${numero(hoy)} visitas; a la misma fecha de ${m.anio - 1} llevaba ${numero(antes)} (${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v * 100))} %).`;
 }

@@ -1,6 +1,6 @@
 import { Seccion, Tarjeta } from "../../../components/ui";
 import { SALUD, TAREAS } from "../../../lib/datos";
-import { FUENTES, LO_QUE_FALTA } from "../../../lib/fuentes";
+import { FUENTES } from "../../../lib/fuentes";
 import { ga4Conectado } from "../../../lib/ga4";
 import { metaConectado } from "../../../lib/meta";
 
@@ -29,8 +29,6 @@ export default function Medicion() {
       como: "Se lee a través de Analytics, que está vinculado con la cuenta: sin token de desarrollador. Los términos de búsqueda siguen a mano." },
     { que: "Meta", listo: conMeta,
       como: "Un usuario del sistema con permiso de solo mirar. Trae gasto, conversaciones y la radiografía del público de todas las campañas." },
-    { que: "Eventia", listo: false,
-      como: "Es tu propia base. Acá el trabajo no es técnico sino decidir qué mostrar. Esto es lo que convierte el ingreso estimado en plata contada." },
   ];
   return (
     <div className="pila">
@@ -97,14 +95,11 @@ export default function Medicion() {
           <span><i style={{ background: "var(--tinta3)" }} />Pendiente: necesita un permiso o una llave</span>
         </div>
 
-        <div className="aviso ojo" style={{ marginTop: 14 }}>
-          <b>Lo único que el panel todavía no puede saber de verdad.</b> {LO_QUE_FALTA}
-        </div>
       </Seccion>
 
       <Seccion
         titulo="Qué está conectado"
-        bajada="Las cuatro fuentes del panel y en qué va cada una."
+        bajada="Las tres fuentes del panel y en qué va cada una."
       >
         <Tarjeta>
           {PASOS.map((p) => (

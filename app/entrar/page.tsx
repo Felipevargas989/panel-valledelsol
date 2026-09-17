@@ -20,7 +20,7 @@ export default function Entrar() {
         body: JSON.stringify({ clave }),
       });
       if (r.ok) {
-        router.replace("/dinero");
+        router.replace("/conversiones");
         router.refresh();
       } else {
         setError("Esa clave no es. Prueba de nuevo.");
