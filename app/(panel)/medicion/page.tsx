@@ -2,7 +2,7 @@ import { Seccion, Tarjeta } from "../../../components/ui";
 import { SALUD, TAREAS } from "../../../lib/datos";
 import { FUENTES } from "../../../lib/fuentes";
 import { ga4Conectado } from "../../../lib/ga4";
-import { metaConectado } from "../../../lib/meta";
+import { metaConectado, metaResponde } from "../../../lib/meta";
 
 // Se arma en cada visita: muestra si Analytics está conectado en este momento.
 export const dynamic = "force-dynamic";
@@ -14,21 +14,24 @@ const ETIQUETA_CAMPO = {
   pendiente: "pendiente de permiso",
 } as const;
 
-export default function Medicion() {
+export default async function Medicion() {
   const enVivo = ga4Conectado();
-  const conMeta = metaConectado();
+  const conMeta = await metaResponde();
+  const metaConLlave = metaConectado();
   // Google Ads se lee a través de Analytics, así que cae con la misma llave.
   const conectadas: Record<string, string> = {
     ...(enVivo ? { ga4: "● Conectado en vivo", google: "● En vivo vía Analytics" } : {}),
-    ...(conMeta ? { meta: "● Conectado en vivo" } : {}),
+    ...(conMeta ? { meta: "● Conectado en vivo" } : metaConLlave ? { meta: "⚠ Conectado, Meta no responde" } : {}),
   };
   const PASOS = [
-    { que: "Analytics", listo: enVivo,
+    { que: "Analytics", listo: enVivo, aMedias: false,
       como: "El día a día del sitio, de dónde llega la gente, qué páginas mira y quién está conectado ahora." },
-    { que: "Google Ads", listo: enVivo,
+    { que: "Google Ads", listo: enVivo, aMedias: false,
       como: "Se lee a través de Analytics, que está vinculado con la cuenta: sin token de desarrollador. Los términos de búsqueda siguen a mano." },
-    { que: "Meta", listo: conMeta,
-      como: "Un usuario del sistema con permiso de solo mirar. Trae gasto, conversaciones y la radiografía del público de todas las campañas." },
+    { que: "Meta", listo: conMeta, aMedias: metaConLlave && !conMeta,
+      como: conMeta || !metaConLlave
+        ? "Un usuario del sistema con permiso de solo mirar. Trae gasto, conversaciones y la radiografía del público de todas las campañas."
+        : "La llave está puesta, pero Meta bloqueó las consultas por exceso de llamadas (el cupo de una app nueva es bajo). Se desbloquea solo; mientras tanto el panel pregunta una vez al día." },
   ];
   return (
     <div className="pila">
@@ -108,8 +111,8 @@ export default function Medicion() {
                 <b>{p.que}</b>
                 <span>{p.como}</span>
               </div>
-              <span className={`marca-estado ${p.listo ? "bien" : "falta"}`}>
-                {p.listo ? "En vivo" : "Falta"}
+              <span className={`marca-estado ${p.listo ? "bien" : p.aMedias ? "vigilar" : "falta"}`}>
+                {p.listo ? "En vivo" : p.aMedias ? "No responde" : "Falta"}
               </span>
             </div>
           ))}

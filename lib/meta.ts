@@ -11,6 +11,7 @@
 // esa tarjeta usa contactos.
 
 import { unstable_cache } from "next/cache";
+import { hoyEnChile, sumarDias } from "./calculos";
 import type { DiaCampana } from "./datos";
 
 const VERSION = "v23.0";
@@ -248,3 +249,17 @@ async function consultarTotales(desde: string, hasta: string): Promise<DiaMeta[]
 }
 
 export const metaTotalesDia = unstable_cache(consultarTotales, ["meta-totales-v2"], { revalidate: UN_DIA });
+
+/** ¿Meta está contestando ahora? Tener la llave no basta: el 17-09-2026 el
+ *  panel decía «Meta en vivo» con la API bloqueada. Se le pide un solo día,
+ *  que además ya viene guardado, así que no gasta consultas de más. */
+export async function metaResponde() {
+  if (!metaConectado()) return false;
+  try {
+    const ayer = sumarDias(hoyEnChile(), -1);
+    await metaTotalesDia(ayer, ayer);
+    return true;
+  } catch {
+    return false;
+  }
+}
