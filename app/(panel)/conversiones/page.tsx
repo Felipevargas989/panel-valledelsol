@@ -78,13 +78,14 @@ export default async function Conversiones({
   const hayAnio = haceAnio.filas.length > 0;
   const total = (xs: Array<{ total: number }>) => xs.reduce((a, d) => a + d.total, 0);
 
-  const mensual = (campo: "impresiones" | "clics") =>
+  const mensual = (campo: "inversion" | "impresiones" | "clics") =>
     anual
       ? mesesDelAnio(
           serieDiaria(anual.filas, inicioAnual, tope12, campo).map((d) => ({ fecha: d.fecha, valor: d.total })),
           tope12,
         )
       : null;
+  const gastoMes = mensual("inversion");
   const imprMes = mensual("impresiones");
   const clicsMes = mensual("clics");
 
@@ -183,7 +184,7 @@ export default async function Conversiones({
         ) : null}
       </Seccion>
 
-      {imprMes && clicsMes ? (
+      {gastoMes && imprMes && clicsMes ? (
         <Seccion
           titulo={`Mes a mes: ${imprMes.anio} contra ${imprMes.anio - 1}`}
           bajada={`Google Ads y Meta sumados. Gris es ${imprMes.anio - 1}; oscuro, ${imprMes.anio}. El mes en curso se compara contra los mismos días del año pasado, para no poner un mes a medias contra uno completo. No cambia con el filtro de fechas.`}
@@ -191,6 +192,10 @@ export default async function Conversiones({
           {/* Uno debajo del otro: doce meses con dos barras cada uno necesitan
               el ancho completo para leerse. */}
           <div className="pila">
+            <Tarjeta titulo="Inversión total en publicidad por mes" extra="Google Ads + Meta"
+                     nota={notaMeses(gastoMes, "invertidos", plata)}>
+              <MesesAnio {...gastoMes} color="total" formato="plata" />
+            </Tarjeta>
             <Tarjeta titulo="Impresiones por mes" nota={notaMeses(imprMes, "impresiones")}>
               <MesesAnio {...imprMes} color="total" formato="numero" />
             </Tarjeta>
@@ -326,12 +331,12 @@ export default async function Conversiones({
 }
 
 /** Lo que va del año contra el mismo tramo del año anterior. */
-function notaMeses(m: ReturnType<typeof mesesDelAnio>, que: string) {
+function notaMeses(m: ReturnType<typeof mesesDelAnio>, que: string, formato: (v: number) => string = numero) {
   const hoy = m.actual.reduce<number>((t, v) => t + (v ?? 0), 0);
   const antes = m.anterior.slice(0, m.mesEnCurso + 1).reduce((t, v) => t + v, 0);
   if (!antes) return undefined;
   const v = (hoy - antes) / antes;
-  return `En lo que va de ${m.anio} van ${numero(hoy)} ${que}; a la misma fecha de ${m.anio - 1} iban ${numero(antes)} (${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v * 100))} %).`;
+  return `En lo que va de ${m.anio} van ${formato(hoy)} ${que}; a la misma fecha de ${m.anio - 1} iban ${formato(antes)} (${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v * 100))} %).`;
 }
 
 /** «▲ 12 % vs. hace un año», para la esquina de la tarjeta. */
