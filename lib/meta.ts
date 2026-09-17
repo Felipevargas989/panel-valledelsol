@@ -20,6 +20,18 @@ const CONTACTO = "onsite_conversion.total_messaging_connection";
 
 export const metaConectado = () => Boolean(process.env.META_TOKEN?.trim());
 
+// Cada respuesta de Meta se guarda un día entero: decisión de Felipe el
+// 17-09-2026, después de que Meta bloqueara la llave («API access blocked»)
+// por exceso de consultas de una app nueva. Una consulta al día y basta.
+const UN_DIA = 86400;
+
+// Y si Meta responde con un error, no se le vuelve a preguntar por media
+// hora: cada visita a la página reintentando es justo lo que alarga el
+// bloqueo. El reloj vive en la memoria del servidor, así que se olvida solo.
+const ESPERA_TRAS_FALLA = 30 * 60 * 1000;
+let calladoHasta = 0;
+let ultimaFalla: ErrorMeta | null = null;
+
 // ── Errores que se pueden explicar ───────────────────────────
 export class ErrorMeta extends Error {
   constructor(public tipo: "llave" | "permiso" | "espera" | "otro", mensaje: string) {
@@ -34,7 +46,7 @@ export function explicarErrorMeta(e: unknown): string {
     if (e.tipo === "permiso")
       return "La llave funciona, pero el usuario del sistema «panel» perdió el permiso de Ver rendimiento sobre la cuenta publicitaria.";
     if (e.tipo === "espera")
-      return "Meta pidió esperar un rato por exceso de consultas. Se reintenta solo en unos minutos.";
+      return "Meta bloqueó las consultas por exceso de llamadas: el cupo de una app nueva es bajo. Se desbloquea solo, normalmente en horas; el panel reintenta cada media hora y ahora pregunta una sola vez al día.";
     return `Meta respondió con un error: ${e.message}`;
   }
   return "No se pudo conectar con Meta. Suele ser pasajero: recarga en un minuto.";
@@ -50,6 +62,7 @@ type Fila = {
 async function insights(params: Record<string, string>): Promise<Fila[]> {
   const token = process.env.META_TOKEN?.trim();
   if (!token) throw new ErrorMeta("llave", "no hay llave");
+  if (ultimaFalla && Date.now() < calladoHasta) throw ultimaFalla;
 
   const url = new URL(`https://graph.facebook.com/${VERSION}/${CUENTA}/insights`);
   for (const [k, v] of Object.entries({ ...params, limit: "500" })) url.searchParams.set(k, v);
@@ -65,13 +78,21 @@ async function insights(params: Record<string, string>): Promise<Fila[]> {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.error) {
       const c = j.error?.code;
+      const mensaje: string = j.error?.message ?? `HTTP ${r.status}`;
+      // Ojo con el orden: el bloqueo por cupo llega con código 200, el mismo
+      // que un problema de permisos. Lo distingue el texto, no el número.
       const tipo =
-        c === 190 ? "llave"
+        /access blocked/i.test(mensaje) ? "espera"
+        : c === 190 ? "llave"
         : c === 200 || c === 10 || c === 272 ? "permiso"
         : [4, 17, 32, 613, 80000, 80004].includes(c) ? "espera"
         : "otro";
-      throw new ErrorMeta(tipo, j.error?.message ?? `HTTP ${r.status}`);
+      const falla = new ErrorMeta(tipo, mensaje);
+      ultimaFalla = falla;
+      calladoHasta = Date.now() + ESPERA_TRAS_FALLA;
+      throw falla;
     }
+    ultimaFalla = null;
     filas.push(...(j.data ?? []));
     siguiente = j.paging?.next ?? null;
   }
@@ -106,7 +127,7 @@ async function consultarDias(desde: string, hasta: string): Promise<DiaCampana[]
   }));
 }
 
-export const metaDias = unstable_cache(consultarDias, ["meta-dias-v1"], { revalidate: 3600 });
+export const metaDias = unstable_cache(consultarDias, ["meta-dias-v2"], { revalidate: UN_DIA });
 
 // ── Radiografía del público (vista Público) ──────────────────
 export type PublicoMeta = {
@@ -203,7 +224,7 @@ async function consultarPublico(desde: string, hasta: string): Promise<PublicoMe
   };
 }
 
-export const metaPublico = unstable_cache(consultarPublico, ["meta-publico-v1"], { revalidate: 3600 });
+export const metaPublico = unstable_cache(consultarPublico, ["meta-publico-v2"], { revalidate: UN_DIA });
 
 // ── Totales por día, sin desglose (comparación anual) ────────
 // Para el mes a mes no hace falta saber la campaña: pedir campaña por día
@@ -226,4 +247,4 @@ async function consultarTotales(desde: string, hasta: string): Promise<DiaMeta[]
   }));
 }
 
-export const metaTotalesDia = unstable_cache(consultarTotales, ["meta-totales-v1"], { revalidate: 3600 });
+export const metaTotalesDia = unstable_cache(consultarTotales, ["meta-totales-v2"], { revalidate: UN_DIA });
