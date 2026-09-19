@@ -51,7 +51,8 @@ Todas las tablas viven en el esquema `panel`.
 Definiciones que no cambian (vienen de la v1 y están validadas contra las plataformas):
 - **Lead en Meta** = conversación de WhatsApp iniciada (`onsite_conversion.messaging_conversation_started_7d`).
 - **Tres niveles en Google** (decidido con Felipe el 19-09, al ver que 9 «leads» de Cabañas · Parejas eran 9 clics en el botón de WhatsApp):
-  **intención** = clics en Cotizar / Reservar · **consulta** = los tres eventos de WhatsApp · **cotización** = cotización enviada + reserva pagada.
+  **intención** = clics en Cotizar / Reservar · **consulta** = los tres eventos de WhatsApp · **cotización** = cotización enviada (eventos) + reserva pagada (cabañas).
+  Las dos líneas terminan en lugares distintos: la cotización de eventos queda en Eventia; la reserva de cabañas, en el motor de reservas.
   La consulta de Google cuenta el clic, no el mensaje: quien aprieta y no escribe igual suma. En Meta la consulta sí es una conversación real.
 - **Conversiones del sitio** = solo nuestros siete eventos; los heredados del sitio viejo se guardan aparte y no se suman.
 - Clics de Meta = clics al enlace (`inline_link_clicks`), comparables con los de Google.
@@ -96,6 +97,9 @@ encender y apagar series) en vez de SVG dibujado a mano.
 
 ## 9. Lo que NO entra (por ahora)
 
-- Eventia (ingresos reales, cierre): Felipe decidió dejarlo fuera el 17-09.
+- Eventia (ingresos reales, cierre): Felipe decidió dejarlo fuera el 17-09. **Ojo: Eventia solo
+  recibe cotizaciones de EVENTOS, no de cabañas** (Felipe, 19-09). O sea que conectarlo cerraría
+  el círculo de eventos; para cabañas la señal de venta es `cabanas_reserva_pagada` en el sitio
+  (motor de reservas), y las estadías reales viven en el sistema de cabañas, fuera del panel.
 - Términos de búsqueda de Google Ads: necesitan la API propia de Google Ads con token de desarrollador; siguen a mano.
 - Pedir el nivel avanzado de la Marketing API: implica verificación del negocio; no hace falta con este presupuesto de llamadas.

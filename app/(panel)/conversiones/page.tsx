@@ -215,7 +215,7 @@ export default async function Conversiones({
 
       <Seccion
         titulo="Campaña por campaña"
-        bajada="Ordenadas por lo que gastaron. Δ compara contra el período anterior. Intención es apretar «Cotizar» o «Reservar». Consulta es un contacto por WhatsApp: en Meta, una conversación que de verdad empezó; en Google, el clic en el botón (quien aprieta y no escribe igual suma). Cotiza o reserva son formularios enviados y reservas pagadas: solo se miden en Google, porque las campañas de Meta llevan a WhatsApp y su cierre no se ve hasta conectar Eventia."
+        bajada="Ordenadas por lo que gastaron. Δ compara contra el período anterior. Intención es apretar «Cotizar» o «Reservar». Consulta es un contacto por WhatsApp: en Meta, una conversación que de verdad empezó; en Google, el clic en el botón (quien aprieta y no escribe igual suma). Cotiza o reserva son cotizaciones de eventos enviadas y reservas de cabañas pagadas: hoy solo se miden en Google, porque las campañas de Meta llevan a WhatsApp y ahí el rastro se corta."
       >
         <div className="tabla-marco">
           <table>
