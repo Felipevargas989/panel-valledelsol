@@ -118,7 +118,7 @@ export default async function Conversiones({
   const total = (xs: Array<{ total: number }>) => xs.reduce((a, d) => a + d.total, 0);
 
   const campanas = porCampana(filas);
-  const campanasAntes = new Map(porCampana(antesDe.filas).map((c) => [c.campana, c]));
+  const campanasAntes = new Map(porCampana(antesDe.filas).map((c) => [`${c.canal}|${c.campana}`, c]));
   const canales = porCanal(filas);
 
   return (
@@ -166,7 +166,8 @@ export default async function Conversiones({
                variacion={variacion(hoy.cotizaciones, antes.cotizaciones)}
                pie="lo más cerca de una venta" />
           <Kpi rotulo="Costo por cotización" familia="costo" valor={plata(hoy.costoCotizacion)}
-               variacion={variacion(hoy.costoCotizacion, antes.costoCotizacion, true)} />
+               variacion={variacion(hoy.costoCotizacion, antes.costoCotizacion, true)}
+               pie="solo con la inversión de Google" />
         </div>
       </Seccion>
 
@@ -239,10 +240,10 @@ export default async function Conversiones({
             </thead>
             <tbody>
               {campanas.map((c) => {
-                const a = campanasAntes.get(c.campana);
+                const a = campanasAntes.get(`${c.canal}|${c.campana}`);
                 const parte = hoy.inversion > 0 ? c.inversion / hoy.inversion : 0;
                 return (
-                  <tr key={c.campana}>
+                  <tr key={`${c.canal}|${c.campana}`}>
                     <td>
                       <span style={{ fontWeight: 500 }}>{c.campana}</span>
                       <div style={{ fontSize: 11.5, color: "var(--tinta3)" }}>
@@ -365,11 +366,11 @@ async function MesAMes({ desde, hasta }: { desde: string; hasta: string }) {
         <div className="aviso ojo" style={{ marginBottom: 14 }}>
           <b>Ojo: estos tres gráficos están incompletos.</b>{" "}
           {anual.faltaMeta && anual.faltaGoogle
-            ? "Ni Meta ni Google Ads respondieron."
+            ? "A la base le faltan los días recientes de Meta y de Google Ads."
             : anual.faltaMeta
-              ? "Meta no respondió, así que solo se ve Google Ads: el gasto real fue más alto."
-              : "Google Ads no respondió, así que solo se ve Meta: el gasto real fue más alto."}{" "}
-          Se arreglan solos cuando la fuente vuelva a responder.
+              ? "A la base le faltan los días recientes de Meta, así que la parte nueva solo trae Google Ads: el gasto real fue más alto."
+              : "A la base le faltan los días recientes de Google Ads, así que la parte nueva solo trae Meta: el gasto real fue más alto."}{" "}
+          Mira el registro de ingestas en Medición; se arregla solo cuando la fuente vuelva a responder.
         </div>
       ) : null}
 

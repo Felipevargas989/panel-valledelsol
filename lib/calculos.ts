@@ -79,12 +79,20 @@ export type Resumen = {
   cpm: number;
   conversion: number;
   cpl: number;
-  /** Cuánto costó cada cotización enviada o reserva pagada. */
+  /** La parte de la inversión que sí puede terminar en cotización (hoy, Google). */
+  inversionConCotizacion: number;
+  /** Cuánto costó cada cotización enviada o reserva pagada, contando solo esa
+   *  inversión: dividir por el gasto total mezclaría el de Meta, que no puede
+   *  registrar cotizaciones. */
   costoCotizacion: number;
 };
 
 export function resumir(filas: DiaCampana[]): Resumen {
   let inversion = 0, impresiones = 0, alcance = 0, clics = 0, leads = 0, intenciones = 0, cotizaciones = 0;
+  // Meta lleva a WhatsApp y nunca registra cotizaciones: su gasto no puede
+  // entrar en el costo por cotización o el número sale inflado. Se suma solo
+  // la inversión de las campañas cuya fuente sí mide cotizaciones.
+  let inversionConCotizacion = 0;
 
   for (const f of filas) {
     inversion += f.inversion;
@@ -92,7 +100,10 @@ export function resumir(filas: DiaCampana[]): Resumen {
     alcance += f.alcance ?? 0;
     clics += f.clics;
     intenciones += f.intenciones ?? 0;
-    cotizaciones += f.cotizaciones ?? 0;
+    if (f.cotizaciones !== null && f.cotizaciones !== undefined) {
+      cotizaciones += f.cotizaciones;
+      inversionConCotizacion += f.inversion;
+    }
     leads += f.leads ?? 0;
   }
 
@@ -103,7 +114,8 @@ export function resumir(filas: DiaCampana[]): Resumen {
     cpm: impresiones > 0 ? (inversion / impresiones) * 1000 : NaN,
     conversion: clics > 0 ? leads / clics : NaN,
     cpl: leads > 0 ? inversion / leads : NaN,
-    costoCotizacion: cotizaciones > 0 ? inversion / cotizaciones : NaN,
+    inversionConCotizacion,
+    costoCotizacion: cotizaciones > 0 ? inversionConCotizacion / cotizaciones : NaN,
   };
 }
 
@@ -168,13 +180,16 @@ export function serieDiaria(
 }
 
 export function porCampana(filas: DiaCampana[]) {
-  const mapa = new Map<string, { canal: Canal; filas: DiaCampana[] }>();
+  // La clave lleva el canal: si una campaña de Google se llama igual que una
+  // de Meta, son dos filas distintas y no una suma sin sentido.
+  const mapa = new Map<string, { canal: Canal; campana: string; filas: DiaCampana[] }>();
   for (const f of filas) {
-    if (!mapa.has(f.campana)) mapa.set(f.campana, { canal: f.canal, filas: [] });
-    mapa.get(f.campana)!.filas.push(f);
+    const clave = `${f.canal}|${f.campana}`;
+    if (!mapa.has(clave)) mapa.set(clave, { canal: f.canal, campana: f.campana, filas: [] });
+    mapa.get(clave)!.filas.push(f);
   }
-  return [...mapa.entries()]
-    .map(([campana, v]) => ({ campana, canal: v.canal, ...resumir(v.filas) }))
+  return [...mapa.values()]
+    .map((v) => ({ campana: v.campana, canal: v.canal, ...resumir(v.filas) }))
     .sort((a, b) => b.inversion - a.inversion);
 }
 

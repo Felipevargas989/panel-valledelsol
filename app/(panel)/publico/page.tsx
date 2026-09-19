@@ -10,6 +10,11 @@ import { baseConectada, publicoMetaDesdeBase, sitioDesdeBase, INICIO_BASE } from
 
 export const dynamic = "force-dynamic";
 
+/** Con la base propia los datos llegan hasta ayer, no en tiempo real: la
+ *  etiqueta no puede prometer «en vivo» lo que se actualiza una vez al día. */
+const etiquetaPeriodo = (desde: string, hasta: string) =>
+  `${fechaCorta(desde)} – ${fechaCorta(hasta)}${baseConectada() ? "" : " · en vivo"}`;
+
 const normal = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const GRAN_CONCE = ["concepcion", "san pedro de la paz", "talcahuano", "coronel", "hualpen", "chiguayante", "penco", "tome", "lota"];
 
@@ -41,7 +46,7 @@ async function leerSitio(desde: string, hasta: string): Promise<Sitio> {
     const d = baseConectada() ? await sitioDesdeBase(desde, hasta) : await datosSitio(desde, hasta);
     return {
       enVivo: true,
-      periodo: `${fechaCorta(desde)} – ${fechaCorta(hasta)} · en vivo`,
+      periodo: etiquetaPeriodo(desde, hasta),
       usuarios: d.actual.personas,
       sesiones: d.actual.sesiones,
       interaccion: d.actual.sesiones > 0 ? d.actual.interactivas / d.actual.sesiones : NaN,
@@ -70,7 +75,7 @@ async function leerMeta(desde: string, hasta: string): Promise<Meta> {
   if (!baseConectada() && !metaConectado()) return foto;
   try {
     const d = baseConectada() ? await publicoMetaDesdeBase(desde, hasta) : await metaPublico(desde, hasta);
-    return { ...d, enVivo: true, error: null, periodo: `${fechaCorta(desde)} – ${fechaCorta(hasta)} · en vivo` };
+    return { ...d, enVivo: true, error: null, periodo: etiquetaPeriodo(desde, hasta) };
   } catch (e) {
     return { ...foto, error: explicarErrorMeta(e) };
   }
@@ -138,7 +143,7 @@ export default async function Publico({
           <b>Estas cifras no cambian con el filtro de fechas.</b> Son el retrato de quién te ve, y para eso
           hace falta el período completo: con pocos días las proporciones se vuelven ruido.{" "}
           {mismoPeriodo
-            ? "Meta y el sitio cubren los mismos últimos 30 días cerrados y se actualizan solos."
+            ? "Meta y el sitio cubren el mismo período y se actualizan solos cada mañana."
             : `Meta va del ${M.periodo} y el sitio del ${S.periodo}.`}
         </div>
       )}

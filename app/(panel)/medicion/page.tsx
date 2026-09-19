@@ -33,7 +33,9 @@ export default async function Medicion() {
     conBase ? ultimoDiaGuardado().catch(() => ({} as Record<string, string | null>)) : Promise.resolve({} as Record<string, string | null>),
   ]);
   const ultimaDe = (fuente: string) => ingestas.find((i) => i.fuente === fuente);
-  const conMeta = conBase ? ultimaDe("meta")?.estado !== "error" : conMetaVivo;
+  // Con la base, Meta está en vivo solo si su última ingesta terminó bien:
+  // que nunca haya corrido no es lo mismo que haber funcionado.
+  const conMeta = conBase ? ultimaDe("meta")?.estado === "ok" : conMetaVivo;
   const metaConLlave = metaConectado();
 
   // Estas filas se comprueban en cada visita; las de SALUD siguen a mano.
@@ -50,6 +52,8 @@ export default async function Medicion() {
       estado: !metaConLlave ? "falta" : conMeta ? "bien" : "vigilar",
       detalle: !metaConLlave
         ? "Falta la llave META_TOKEN en Vercel."
+        : conBase && !ultimaDe("meta")
+          ? "La llave está puesta, pero todavía no ha corrido ninguna ingesta de Meta: la base no tiene datos suyos."
         : conMeta
           ? "Meta responde. El panel le pregunta una vez al día para no pasarse del cupo de la app."
           : "Meta bloqueó las consultas por exceso de llamadas. Se libera solo; el panel reintenta cada media hora.",
@@ -113,7 +117,7 @@ export default async function Medicion() {
       {conBase ? (
         <Seccion
           titulo="Ingestas"
-          bajada="Cada vez que el panel trae datos queda anotado acá. La corrida automática es a las 6 de la mañana; el botón trae el día de hoy a pedido (como mucho una vez cada media hora)."
+          bajada="Cada vez que el panel trae datos queda anotado acá, en hora de Chile. La corrida automática es a las 6 de la mañana; el botón trae el día de hoy a pedido (como mucho una vez cada media hora)."
         >
           <Tarjeta>
             <div style={{ marginBottom: 14 }}><ActualizarHoy /></div>
@@ -125,7 +129,7 @@ export default async function Medicion() {
                 <tbody>
                   {ingestas.map((i) => (
                     <tr key={i.id}>
-                      <td>{i.inicio.slice(0, 16).replace("T", " ")}</td>
+                      <td>{i.inicio}</td>
                       <td style={{ textAlign: "left" }}>{NOMBRE_FUENTE[i.fuente] ?? i.fuente}</td>
                       <td>{fechaCorta(i.desde)} – {fechaCorta(i.hasta)}</td>
                       <td className="n">{numero(i.filas)}</td>

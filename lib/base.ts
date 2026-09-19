@@ -21,10 +21,20 @@ function sql() {
 }
 
 // ── Escritura (la usa la ingesta) ────────────────────────────
-/** Guarda campañas por día; si el día ya existía, lo reemplaza. */
-export async function guardarCampanaDia(filas: DiaCampana[]) {
+/** Guarda campañas por día; si el día ya existía, lo reemplaza.
+ *
+ *  Con `limpiar` además borra del rango las filas de ese canal que la fuente
+ *  ya no reporta. Hace falta porque Meta devuelve SIEMPRE el nombre actual de
+ *  la campaña, también para días pasados: sin esto, un cambio de nombre deja
+ *  la fila vieja y la nueva para el mismo día y el gasto se cuenta dos veces.
+ *  Solo se limpia si la fuente trajo datos, para que un error no vacíe la base. */
+export async function guardarCampanaDia(
+  filas: DiaCampana[],
+  limpiar?: { canal: "meta" | "google"; desde: string; hasta: string },
+) {
   if (!filas.length) return 0;
   const q = sql();
+  const sello = new Date().toISOString();
   // Neon acepta una consulta por llamada; van en tandas de 200 filas.
   for (let i = 0; i < filas.length; i += 200) {
     const tanda = filas.slice(i, i + 200);
@@ -41,8 +51,16 @@ export async function guardarCampanaDia(filas: DiaCampana[]) {
         tanda.map((f) => f.inversion), tanda.map((f) => f.impresiones), tanda.map((f) => f.alcance),
         tanda.map((f) => f.clics), tanda.map((f) => f.leads ?? null), tanda.map((f) => f.intenciones ?? null),
         tanda.map((f) => f.cotizaciones ?? null),
-        tanda.map(() => new Date().toISOString()),
+        tanda.map(() => sello),
       ],
+    );
+  }
+
+  if (limpiar) {
+    await q.query(
+      `delete from panel.campana_dia
+        where canal = $1 and fecha between $2 and $3 and actualizado_en < $4`,
+      [limpiar.canal, limpiar.desde, limpiar.hasta, sello],
     );
   }
   return filas.length;
@@ -53,9 +71,14 @@ export type FilaDesglose = { fecha: string; tipo: string; clave: string; a: numb
 /** Guarda desgloses (sitio o Meta) en la tabla que corresponda. Las tres
  *  cifras significan sesiones/personas/conversiones en el sitio y
  *  gasto/conversaciones/contactos en Meta. */
-export async function guardarDesglose(tabla: "sitio_desglose" | "meta_desglose", filas: FilaDesglose[]) {
+export async function guardarDesglose(
+  tabla: "sitio_desglose" | "meta_desglose",
+  filas: FilaDesglose[],
+  limpiar?: { desde: string; hasta: string },
+) {
   if (!filas.length) return 0;
   const q = sql();
+  const sello = new Date().toISOString();
   const cols = tabla === "sitio_desglose" ? "sesiones, personas, conversiones" : "gasto, conversaciones, contactos";
   const [c1, c2, c3] = cols.split(", ");
   for (let i = 0; i < filas.length; i += 300) {
@@ -68,8 +91,19 @@ export async function guardarDesglose(tabla: "sitio_desglose" | "meta_desglose",
       [
         tanda.map((f) => f.fecha), tanda.map((f) => f.tipo), tanda.map((f) => f.clave),
         tanda.map((f) => f.a), tanda.map((f) => f.b), tanda.map((f) => f.c),
-        tanda.map(() => new Date().toISOString()),
+        tanda.map(() => sello),
       ],
+    );
+  }
+
+  // Igual que en las campañas: lo que la fuente ya no reporta para esos días
+  // (una página renombrada, una ubicación que dejó de existir) se va.
+  if (limpiar) {
+    const tipos = [...new Set(filas.map((f) => f.tipo))];
+    await q.query(
+      `delete from panel.${tabla}
+        where fecha between $1 and $2 and tipo = any($3::text[]) and actualizado_en < $4`,
+      [limpiar.desde, limpiar.hasta, tipos, sello],
     );
   }
   return filas.length;
@@ -127,7 +161,9 @@ export type Ingesta = {
 export async function ultimasIngestas(n = 12): Promise<Ingesta[]> {
   const filas = await sql().query(
     `select id, fuente, to_char(desde, 'YYYY-MM-DD') as desde, to_char(hasta, 'YYYY-MM-DD') as hasta,
-            filas, estado, error, inicio::text, fin::text
+            filas, estado, error,
+            to_char(inicio at time zone 'America/Santiago', 'DD-MM-YYYY HH24:MI') as inicio,
+            to_char(fin at time zone 'America/Santiago', 'DD-MM-YYYY HH24:MI') as fin
        from panel.ingesta order by inicio desc limit $1`,
     [n],
   );
@@ -154,13 +190,17 @@ async function consulta<T>(texto: string, valores: unknown[] = []): Promise<T[]>
   return (await sql().query(texto, valores)) as T[];
 }
 
-/** Cuándo fue la última corrida que incluyó el día de hoy (para el freno del botón). */
-export async function ultimaIngestaDeHoy(hoy: string): Promise<string | null> {
+/** Hace cuántos minutos fue la última corrida que incluyó el día de hoy (para
+ *  el freno del botón). El cálculo se hace en la base para no depender de cómo
+ *  el servidor interpreta el texto de la fecha. */
+export async function minutosDesdeUltimaIngestaDeHoy(hoy: string): Promise<number | null> {
   const filas = (await sql().query(
-    `select max(inicio)::text as inicio from panel.ingesta where hasta = $1`,
+    `select extract(epoch from (now() - max(inicio))) / 60 as minutos
+       from panel.ingesta where hasta = $1`,
     [hoy],
-  )) as Array<{ inicio: string | null }>;
-  return filas[0]?.inicio ?? null;
+  )) as Array<{ minutos: number | null }>;
+  const m = filas[0]?.minutos;
+  return m === null || m === undefined ? null : Number(m);
 }
 
 const sinDato = (v: string) => (!v || v === "(not set)" ? "Sin dato" : v);
@@ -181,12 +221,16 @@ async function totalesSitio(desde: string, hasta: string): Promise<Totales> {
   };
 }
 
-/** Un desglose sumado en el rango, ordenado de mayor a menor. */
-async function desgloseSitio(desde: string, hasta: string, tipo: string, limite: number) {
+/** Un desglose sumado en el rango, ordenado de mayor a menor. Se recorta por
+ *  la misma medida con que después se muestra: las tarjetas de ciudad, aparato
+ *  y sistema hablan de personas, y las de canal y fuente, de visitas. */
+async function desgloseSitio(
+  desde: string, hasta: string, tipo: string, limite: number, por: "sesiones" | "personas" = "sesiones",
+) {
   return (await sql().query(
     `select clave, sum(sesiones)::int sesiones, sum(personas)::int personas, sum(conversiones)::int conversiones
        from panel.sitio_desglose where fecha between $1 and $2 and tipo = $3
-      group by clave order by 2 desc, 3 desc limit $4`,
+      group by clave order by sum(${por === "personas" ? "personas" : "sesiones"}) desc, sum(conversiones) desc limit $4`,
     [desde, hasta, tipo, limite],
   )) as Array<{ clave: string; sesiones: number; personas: number; conversiones: number }>;
 }
@@ -209,9 +253,9 @@ export async function sitioDesdeBase(desde: string, hasta: string): Promise<Dato
         `select clave, sum(sesiones)::int vistas from panel.sitio_desglose
           where fecha between $1 and $2 and tipo = 'pagina' group by clave order by 2 desc limit 10`, [desde, hasta],
       ),
-      desgloseSitio(desde, hasta, "ciudad", 10),
-      desgloseSitio(desde, hasta, "aparato", 5),
-      desgloseSitio(desde, hasta, "sistema", 7),
+      desgloseSitio(desde, hasta, "ciudad", 10, "personas"),
+      desgloseSitio(desde, hasta, "aparato", 5, "personas"),
+      desgloseSitio(desde, hasta, "sistema", 7, "personas"),
       consulta<{ clave: string; cantidad: number }>(
         `select clave, sum(conversiones)::int cantidad from panel.sitio_desglose
           where fecha between $1 and $2 and tipo = 'evento' group by clave order by 2 desc`, [desde, hasta],
@@ -301,3 +345,16 @@ export async function visitasDesdeBase(desde: string, hasta: string): Promise<Ar
 
 /** Primer día con datos en la base (para el filtro de fechas). */
 export const INICIO_BASE = "2025-01-01";
+
+/** ¿A qué fuentes les faltan días recientes en la base? Sirve para avisar en
+ *  pantalla cuando la ingesta lleva tiempo fallando: un gráfico al que le
+ *  falta media inversión miente igual que uno mal dibujado. */
+export async function fuentesAlDia(hasta: string): Promise<Record<"meta" | "google", boolean>> {
+  const ultimo = await ultimoDiaGuardado();
+  // Dos días de gracia: el cron corre en la mañana y el día de hoy no cierra.
+  const limite = sumarDias(hasta, -2);
+  return {
+    meta: Boolean(ultimo.meta && ultimo.meta >= limite),
+    google: Boolean(ultimo.google && ultimo.google >= limite),
+  };
+}

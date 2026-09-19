@@ -29,12 +29,12 @@ la ingesta programada y, a pedido, para el día en curso.
 | Capa | Dónde | Qué hace |
 |---|---|---|
 | Base | **Postgres en Vercel (Neon, plan gratis)** | Guarda campañas por día, sitio por día, desgloses de público y el registro de ingestas. Postgres normal: se exporta cuando se quiera. |
-| Ingesta | `app/api/ingesta/route.ts` + cron en `vercel.json` | Cada mañana trae **el día anterior** de las tres fuentes y lo guarda (upsert: si el día ya existe, se reemplaza). Protegida con `CRON_SECRET`. |
+| Ingesta | `app/api/ingesta/route.ts` + cron en `vercel.json` | Cada mañana trae **el día anterior** de las tres fuentes y lo guarda (upsert; además borra del rango lo que la fuente ya no reporta, porque Meta devuelve el nombre actual de la campaña también para días pasados y un cambio de nombre duplicaría el gasto). Exige `CRON_SECRET`: sin llave no corre. Rango máximo 400 días. |
 | Carga inicial | `scripts/cargar-historia.ts` (se corre una vez, a mano) | Trae la historia desde el 01-01-2025 por tandas, con pausas, y la guarda. No se repite nunca. |
 | Lectura | `lib/base.ts` + `app/api/datos/route.ts` | Consultas a la base ya agregadas por día / campaña / mes. Ninguna llamada a APIs externas. |
 | Dashboard | vistas del panel | Filtros de fecha, canal y campaña **sin recargar**; comparación con el período anterior y con el año anterior; gráficos interactivos. |
 | Tiempo real | `/api/ahora` (ya existe) | «Quién está en el sitio ahora» sigue leyendo Analytics en vivo cada minuto. Su cupo es aparte y generoso. |
-| Día en curso | botón «Actualizar hoy» → `/api/ingesta?dia=hoy` | Trae el día de hoy a pedido. Freno: como mucho una vez cada 30 minutos. |
+| Día en curso | botón «Actualizar hoy» → `POST /api/actualizar` | Trae ayer y hoy a pedido. Freno de 30 minutos calculado en la base, y solo acepta llamadas del propio panel; la protección de verdad es `PANEL_CLAVE`. |
 
 ## 4. Modelo de datos
 
@@ -55,6 +55,7 @@ Definiciones que no cambian (vienen de la v1 y están validadas contra las plata
   Las dos líneas terminan en lugares distintos: la cotización de eventos queda en Eventia; la reserva de cabañas, en el motor de reservas.
   La consulta de Google cuenta el clic, no el mensaje: quien aprieta y no escribe igual suma. En Meta la consulta sí es una conversación real.
 - **Conversiones del sitio** = solo nuestros siete eventos; los heredados del sitio viejo se guardan aparte y no se suman.
+- **Costo por cotización** = solo la inversión de las campañas cuya fuente mide cotizaciones (hoy, Google). Meter el gasto de Meta ahí infla el número: sus campañas van a WhatsApp y nunca registran cotización.
 - Clics de Meta = clics al enlace (`inline_link_clicks`), comparables con los de Google.
 
 ## 5. Presupuesto de llamadas (la regla que evita otro bloqueo)

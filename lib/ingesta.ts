@@ -31,18 +31,21 @@ export async function ingestar(opciones: {
   };
 
   if (metaConectado()) {
-    await correr("meta", async () => guardarCampanaDia(await leerMetaDias(desde, hasta)));
-    await correr("meta-publico", async () => guardarDesglose("meta_desglose", await leerMetaDesglosesDia(desde, hasta)));
+    await correr("meta", async () =>
+      guardarCampanaDia(await leerMetaDias(desde, hasta), { canal: "meta", desde, hasta }));
+    await correr("meta-publico", async () =>
+      guardarDesglose("meta_desglose", await leerMetaDesglosesDia(desde, hasta), { desde, hasta }));
   } else {
     resultado.meta = { saltado: "sin llave" };
   }
 
   if (ga4Conectado()) {
-    await correr("google", async () => guardarCampanaDia(await leerGoogleAds(desde, hasta)));
+    await correr("google", async () =>
+      guardarCampanaDia(await leerGoogleAds(desde, hasta), { canal: "google", desde, hasta }));
     await correr("sitio", async () => {
       const s = await leerSitioPorDia(desde, hasta);
       const n = await guardarSitioDia(s.dias);
-      await guardarDesglose("sitio_desglose", s.desgloses);
+      await guardarDesglose("sitio_desglose", s.desgloses, { desde, hasta });
       return n;
     });
   } else {
