@@ -263,3 +263,53 @@ export async function metaResponde() {
     return false;
   }
 }
+
+// ── Para la ingesta (sin caché: guarda en la base) ───────────
+// Ver docs/ARQUITECTURA.md. Presupuesto: 1 llamada de campañas + 5 desgloses
+// por corrida. Las vistas nunca llaman a esto.
+export const leerMetaDias = consultarDias;
+
+const DESGLOSES = [
+  ["edad", "age"],
+  ["genero", "gender"],
+  ["plataforma", "publisher_platform"],
+  ["ubicacion", "publisher_platform,platform_position"],
+  ["region", "region"],
+] as const;
+
+export type DesgloseMetaDia = { fecha: string; tipo: string; clave: string; a: number; b: number; c: number };
+
+/** La radiografía día por día: gasto, conversaciones y contactos por edad,
+ *  género, plataforma, ubicación y región. Cinco llamadas, una por desglose,
+ *  con tres segundos de pausa entre ellas para no rozar el cupo. */
+export async function leerMetaDesglosesDia(desde: string, hasta: string): Promise<DesgloseMetaDia[]> {
+  const salida: DesgloseMetaDia[] = [];
+  for (const [tipo, breakdowns] of DESGLOSES) {
+    const filas = await insights({
+      time_increment: "1",
+      time_range: rango(desde, hasta),
+      fields: "spend,actions",
+      breakdowns,
+    });
+    for (const f of filas) {
+      const clave =
+        tipo === "edad" ? texto(f, "age").replace("-", "–")
+        : tipo === "genero" ? GENERO[texto(f, "gender")] ?? texto(f, "gender")
+        : tipo === "plataforma" ? PLATAFORMA[texto(f, "publisher_platform")] ?? texto(f, "publisher_platform")
+        : tipo === "ubicacion" ? UBICACION[`${texto(f, "publisher_platform")}|${texto(f, "platform_position")}`] ?? texto(f, "platform_position")
+        : nombreRegion(texto(f, "region"));
+      salida.push({
+        fecha: texto(f, "date_start"), tipo, clave,
+        a: Math.round(cifra(f, "spend")), b: accion(f, CONVERSACION), c: accion(f, CONTACTO),
+      });
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  return salida;
+}
+
+/** «Bío Bío Region» → «Bío Bío y Ñuble»; «Santiago Metropolitan Region» → «Santiago». */
+function nombreRegion(crudo: string) {
+  const limpio = crudo.replace(/ Metropolitan Region$/, "").replace(/ Region$/, "");
+  return /^b[ií]o ?b[ií]o$/i.test(limpio) ? "Bío Bío y Ñuble" : limpio;
+}

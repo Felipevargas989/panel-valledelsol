@@ -548,3 +548,92 @@ async function consultarVisitas(desde: string, hasta: string): Promise<Array<{ f
 }
 
 export const visitasPorDia = unstable_cache(consultarVisitas, ["ga4-visitas-v1"], { revalidate: 3600 });
+
+// ── Para la ingesta (sin caché: guarda en la base) ───────────
+// Ver docs/ARQUITECTURA.md. Estas funciones las llama /api/ingesta una vez al
+// día; las vistas nunca las tocan.
+export const leerGoogleAds = consultarGoogleAds;
+
+export type SitioPorDia = {
+  dias: Array<{
+    fecha: string; personas: number; nuevos: number; sesiones: number;
+    interactivas: number; conversiones: number; duracionMedia: number;
+  }>;
+  desgloses: Array<{ fecha: string; tipo: string; clave: string; a: number; b: number; c: number }>;
+};
+
+const SISTEMA = (v: string) => (v === "iOS" ? "iPhone (iOS)" : v === "Macintosh" ? "Mac" : sinDato(v));
+
+/** El sitio día por día, con sus desgloses, para guardarlo en la base.
+ *  Tres tandas de cinco informes: 12 llamadas lógicas, 3 llamadas reales. */
+export async function leerSitioPorDia(desde: string, hasta: string): Promise<SitioPorDia> {
+  const rango = [{ startDate: desde, endDate: hasta }];
+  const porDia = (dim: string | null, metricas: string[], filtro?: unknown) => ({
+    dateRanges: rango,
+    dimensions: [{ name: "date" }, ...(dim ? [{ name: dim }] : [])],
+    metrics: metricas.map((name) => ({ name })),
+    ...(filtro ? { dimensionFilter: filtro } : {}),
+    limit: 100000,
+  });
+
+  const [a, b, c] = await Promise.all([
+    llamar<{ reports: Reporte[] }>("batchRunReports", {
+      requests: [
+        porDia(null, ["activeUsers", "newUsers", "sessions", "engagedSessions", "averageSessionDuration"]),
+        porDia(null, ["keyEvents"], soloNuestras),
+        porDia("sessionDefaultChannelGroup", ["sessions", "activeUsers"]),
+        porDia("sessionDefaultChannelGroup", ["keyEvents"], soloNuestras),
+        porDia("sessionSourceMedium", ["sessions", "activeUsers"]),
+      ],
+    }),
+    llamar<{ reports: Reporte[] }>("batchRunReports", {
+      requests: [
+        porDia("sessionSourceMedium", ["keyEvents"], soloNuestras),
+        porDia("landingPage", ["sessions", "activeUsers"]),
+        porDia("landingPage", ["keyEvents"], soloNuestras),
+        porDia("city", ["sessions", "activeUsers"]),
+        porDia("deviceCategory", ["sessions", "activeUsers"]),
+      ],
+    }),
+    llamar<{ reports: Reporte[] }>("batchRunReports", {
+      requests: [
+        porDia("operatingSystem", ["sessions", "activeUsers"]),
+        porDia("pageTitle", ["screenPageViews"]),
+      ],
+    }),
+  ]);
+  const [rTot, rConv, rCanal, rCanalConv, rFuente] = a.reports ?? [];
+  const [rFuenteConv, rEntrada, rEntradaConv, rCiudad, rAparato] = b.reports ?? [];
+  const [rSistema, rPagina] = c.reports ?? [];
+
+  const fecha = (t: string) => `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}`;
+  const convDia = new Map(filas(rConv).map((f) => [f.d[0], f.m[0]]));
+  const dias = filas(rTot).map((f) => ({
+    fecha: fecha(f.d[0]),
+    personas: f.m[0], nuevos: f.m[1], sesiones: f.m[2], interactivas: f.m[3],
+    conversiones: convDia.get(f.d[0]) ?? 0, duracionMedia: f.m[4],
+  }));
+
+  const desgloses: SitioPorDia["desgloses"] = [];
+  const indice = (r: Reporte | undefined) => new Map(filas(r).map((f) => [`${f.d[0]}|${f.d[1]}`, f.m[0]]));
+  const agregar = (
+    tipo: string, r: Reporte | undefined, traducir: (v: string) => string,
+    conv?: Map<string, number>, soloVistas = false,
+  ) => {
+    for (const f of filas(r)) {
+      desgloses.push({
+        fecha: fecha(f.d[0]), tipo, clave: traducir(f.d[1]),
+        a: f.m[0], b: soloVistas ? 0 : f.m[1] ?? 0, c: conv?.get(`${f.d[0]}|${f.d[1]}`) ?? 0,
+      });
+    }
+  };
+  agregar("canal", rCanal, (v) => CANALES[v] ?? v, indice(rCanalConv));
+  agregar("fuente", rFuente, (v) => v, indice(rFuenteConv));
+  agregar("entrada", rEntrada, (v) => v, indice(rEntradaConv));
+  agregar("ciudad", rCiudad, (v) => CIUDADES[v] ?? sinDato(v));
+  agregar("aparato", rAparato, (v) => DISPOSITIVOS[v] ?? sinDato(v));
+  agregar("sistema", rSistema, SISTEMA);
+  agregar("pagina", rPagina, (v) => v, undefined, true);
+
+  return { dias, desgloses };
+}
