@@ -82,7 +82,7 @@ Filtros globales en la URL (`?desde&hasta&canal&campana`) para que un enlace cop
 Se mantiene el diseño de la v1 (paleta validada, colores con significado: Google azul, Meta
 naranja, sitio verde azulado, año anterior gris; verde y rojo solo para mejoró/empeoró; nunca
 dos escalas en un gráfico). Cambia la ejecución: gráficos con librería interactiva (cursor,
-zoom por arrastre, encender y apagar series) en vez de SVG dibujado a mano.
+encender y apagar series) en vez de SVG dibujado a mano.
 
 ## 8. Orden de trabajo
 
@@ -90,7 +90,7 @@ zoom por arrastre, encender y apagar series) en vez de SVG dibujado a mano.
 |---|---|---|
 | 1 | Base creada, esquema, ingesta diaria, carga de la historia, registro en Medición | Nada visible todavía; el panel sigue funcionando como hoy |
 | 2 | Las vistas leen de la base; filtros sin recarga; botón «Actualizar hoy» | La página abre al instante y no vuelve a tocar las APIs por mirarla |
-| 3 | Gráficos interactivos (Recharts: cursor, zoom por arrastre, series que se apagan), candado (`PANEL_CLAVE`), subdominio `panel.valledelsolquillon.cl` | El dashboard final. **Hecho el 19-09**: gráficos y subdominio; el candado queda activo cuando Felipe ponga `PANEL_CLAVE` en Vercel |
+| 3 | Gráficos interactivos (Recharts: cursor y series que se apagan; la barra de zoom se probó y se sacó el 19-09), candado (`PANEL_CLAVE`), subdominio `panel.valledelsolquillon.cl` | El dashboard final. **Hecho el 19-09**: gráficos y subdominio; el candado queda activo cuando Felipe ponga `PANEL_CLAVE` en Vercel |
 
 ## 9. Lo que NO entra (por ahora)
 

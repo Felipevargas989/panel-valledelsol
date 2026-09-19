@@ -171,7 +171,7 @@ export default async function Conversiones({
 
       <Seccion
         titulo="Inversión día a día"
-        bajada="Cada barra es un día. El naranja es Meta y el azul es Google. Pasa el cursor por encima para ver el detalle; con más de tres semanas aparece abajo una barra para acercar el zoom arrastrando."
+        bajada="Cada barra es un día. El naranja es Meta y el azul es Google. Pasa el cursor por encima para ver el detalle y haz clic en la leyenda para apagar un canal."
       >
         <Tarjeta>
           <BarrasDia datos={gastoDia} formato="plata" />

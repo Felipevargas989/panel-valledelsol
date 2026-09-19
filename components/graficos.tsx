@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Line, Area, XAxis, YAxis,
-  CartesianGrid, Tooltip, Brush, Cell,
+  CartesianGrid, Tooltip, Cell,
 } from "recharts";
 import { fechaCorta, plata, numero } from "../lib/calculos";
 
@@ -14,8 +14,9 @@ const FORMATO = { plata, numero } as const;
 export type NombreFormato = keyof typeof FORMATO;
 
 // Sprint 3 (19-09-2026): los gráficos pasan de SVG dibujado a mano a Recharts,
-// para tener cursor, zoom por arrastre (la barra de abajo) y series que se
-// encienden y apagan desde la leyenda. Lo que NO cambia son las reglas:
+// para tener cursor y series que se encienden y apagan desde la leyenda.
+// (La barra de zoom por arrastre se probó y Felipe la sacó el mismo día: no
+// se entendía.) Lo que NO cambia son las reglas:
 //
 // - NUNCA dos escalas distintas en el mismo gráfico. Cuando hay que comparar
 //   dos medidas de tamaño distinto, van dos gráficos lado a lado
@@ -57,9 +58,6 @@ const corto = (v: number) =>
   v >= 1_000_000 ? (v / 1_000_000).toFixed(v % 1_000_000 === 0 ? 0 : 1).replace(".", ",") + "M"
   : v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1).replace(".", ",") + "k"
   : String(v);
-
-// Desde cuántos puntos aparece la barra de zoom (arrastrar para acercar).
-const PUNTOS_PARA_ZOOM = 21;
 
 const EJE = { fontSize: 10.5, fill: "var(--tinta3)" } as const;
 const REJILLA = { stroke: "var(--borde)", vertical: false } as const;
@@ -156,7 +154,7 @@ export function BarrasDia({
   return (
     <div>
       <ResponsiveContainer width="100%" height={alto}>
-        <ComposedChart data={datos} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="22%">
+        <ComposedChart data={datos} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="22%" accessibilityLayer={false}>
           <CartesianGrid {...REJILLA} />
           <XAxis dataKey="fecha" tickFormatter={fechaCorta} tick={EJE} axisLine={{ stroke: "var(--borde2)" }}
                  tickLine={false} minTickGap={28} />
@@ -180,10 +178,6 @@ export function BarrasDia({
                radius={[0, 0, 3, 3]} />
           <Bar dataKey="google" stackId="dia" fill={COLOR.google} hide={ocultas.has("google")} isAnimationActive={false}
                radius={[3, 3, 0, 0]} />
-          {datos.length > PUNTOS_PARA_ZOOM ? (
-            <Brush dataKey="fecha" height={22} travellerWidth={8} tickFormatter={fechaCorta}
-                   stroke="var(--borde2)" fill="var(--fondo)" />
-          ) : null}
         </ComposedChart>
       </ResponsiveContainer>
       <LeyendaClic ocultas={ocultas} alternar={alternar} series={[
@@ -227,7 +221,7 @@ export function LineaDia({
   return (
     <div>
       <ResponsiveContainer width="100%" height={alto}>
-        <ComposedChart data={filas} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <ComposedChart data={filas} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} accessibilityLayer={false}>
           <defs>
             <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={c} stopOpacity=".18" />
@@ -268,10 +262,6 @@ export function LineaDia({
           <Line type="monotone" dataKey="valor" stroke={c} strokeWidth={2} dot={false}
                 activeDot={{ r: 5, fill: c, stroke: "var(--tarjeta)", strokeWidth: 2 }}
                 hide={ocultas.has("valor")} isAnimationActive={false} />
-          {filas.length > PUNTOS_PARA_ZOOM ? (
-            <Brush dataKey="fecha" height={22} travellerWidth={8} tickFormatter={fechaCorta}
-                   stroke="var(--borde2)" fill="var(--fondo)" />
-          ) : null}
         </ComposedChart>
       </ResponsiveContainer>
       {previo ? (
@@ -334,7 +324,7 @@ export function MesesAnio({
   return (
     <div>
       <ResponsiveContainer width="100%" height={alto}>
-        <BarChart data={filas} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="28%" barGap={2}>
+        <BarChart data={filas} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="28%" barGap={2} accessibilityLayer={false}>
           <CartesianGrid {...REJILLA} />
           <XAxis dataKey="mes" tick={EJE} axisLine={{ stroke: "var(--borde2)" }} tickLine={false} interval={0} />
           <YAxis tickFormatter={corto} tick={{ ...EJE, fontFamily: "var(--mono)" }} axisLine={false}

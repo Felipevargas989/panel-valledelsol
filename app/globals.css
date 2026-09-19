@@ -312,3 +312,6 @@ ul.tareas small { color: var(--tinta2); font-size: 12.5px; }
 .hueso.linea-hueso { height: 14px; width: 40%; margin-bottom: 10px; }
 @keyframes hueso { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .hueso { animation: none; } }
+
+/* Recharts pone un recuadro azul de foco al hacer clic en el gráfico. Fuera. */
+.recharts-wrapper, .recharts-wrapper *:focus, .recharts-surface { outline: none !important; }
