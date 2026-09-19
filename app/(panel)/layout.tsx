@@ -5,14 +5,28 @@ import { fechaLarga } from "../../lib/calculos";
 import { ga4Conectado } from "../../lib/ga4";
 import { metaConectado, metaResponde } from "../../lib/meta";
 
-export default async function PanelLayout({ children }: { children: React.ReactNode }) {
-  const conCandado = Boolean(process.env.PANEL_CLAVE);
+/** Los sellos preguntan a Meta si responde. Van aparte y en Suspense para
+ *  que el encabezado y las pestañas se pinten al tiro, sin esperar a Meta. */
+async function Sellos() {
   const conAnalytics = ga4Conectado();
   const conMeta = await metaResponde();
   // Google Ads se lee a través de Analytics: cae con la misma llave.
   const enVivo = [conAnalytics && "Analytics", conAnalytics && "Google Ads", conMeta && "Meta"].filter(Boolean);
   const aMano = [!conMeta && "Meta", !conAnalytics && "Google"].filter(Boolean);
   const lista = (xs: unknown[]) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} y ${xs.at(-1)}` : String(xs[0]);
+  return (
+    <>
+      {enVivo.length ? <span className="sello">● {lista(enVivo)} en vivo</span> : null}
+      {aMano.length ? (
+        <span className="sello">{lista(aMano)} a mano · al {fechaLarga(RANGO_DATOS.hasta)}</span>
+      ) : null}
+      {metaConectado() && !conMeta ? <span className="sello">⚠ Meta no responde</span> : null}
+    </>
+  );
+}
+
+export default function PanelLayout({ children }: { children: React.ReactNode }) {
+  const conCandado = Boolean(process.env.PANEL_CLAVE);
 
   return (
     <>
@@ -26,11 +40,9 @@ export default async function PanelLayout({ children }: { children: React.ReactN
             </div>
           </div>
           <div className="banda-dcha">
-            {enVivo.length ? <span className="sello">● {lista(enVivo)} en vivo</span> : null}
-            {aMano.length ? (
-              <span className="sello">{lista(aMano)} a mano · al {fechaLarga(RANGO_DATOS.hasta)}</span>
-            ) : null}
-            {metaConectado() && !conMeta ? <span className="sello">⚠ Meta no responde</span> : null}
+            <Suspense fallback={<span className="sello" style={{ opacity: .6 }}>comprobando fuentes…</span>}>
+              <Sellos />
+            </Suspense>
             {!conCandado ? <span className="sello">⚠ Sin candado</span> : null}
           </div>
         </div>

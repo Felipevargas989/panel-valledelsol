@@ -3,6 +3,7 @@ import { SALUD, TAREAS } from "../../../lib/datos";
 import { FUENTES } from "../../../lib/fuentes";
 import { ga4Conectado } from "../../../lib/ga4";
 import { metaConectado, metaResponde } from "../../../lib/meta";
+import { dominioVerificadoEnMeta } from "../../../lib/salud";
 
 // Se arma en cada visita: muestra si Analytics está conectado en este momento.
 export const dynamic = "force-dynamic";
@@ -16,8 +17,36 @@ const ETIQUETA_CAMPO = {
 
 export default async function Medicion() {
   const enVivo = ga4Conectado();
-  const conMeta = await metaResponde();
+  const [conMeta, dominioOk] = await Promise.all([metaResponde(), dominioVerificadoEnMeta()]);
   const metaConLlave = metaConectado();
+
+  // Estas filas se comprueban en cada visita; las de SALUD siguen a mano.
+  const vivas: typeof SALUD = [
+    {
+      que: "Dominio verificado en Meta",
+      estado: dominioOk ? "bien" : "falta",
+      detalle: dominioOk
+        ? "valledelsolquillon.cl está verificado (registro TXT en Cloudflare desde el 17-09). El panel lo comprueba en el DNS cada seis horas."
+        : "No aparece el registro TXT de Meta en el DNS de valledelsolquillon.cl. Sin eso la medición en iPhone queda coja.",
+    },
+    {
+      que: "Conexión con Meta",
+      estado: !metaConLlave ? "falta" : conMeta ? "bien" : "vigilar",
+      detalle: !metaConLlave
+        ? "Falta la llave META_TOKEN en Vercel."
+        : conMeta
+          ? "Meta responde. El panel le pregunta una vez al día para no pasarse del cupo de la app."
+          : "Meta bloqueó las consultas por exceso de llamadas. Se libera solo; el panel reintenta cada media hora.",
+    },
+    {
+      que: "Conexión con Analytics y Google Ads",
+      estado: enVivo ? "bien" : "falta",
+      detalle: enVivo
+        ? "Analytics responde y Google Ads se lee a través de él, refrescado cada hora."
+        : "Falta la llave GA4_CREDENCIALES en Vercel.",
+    },
+  ];
+  const salud = [...vivas, ...SALUD];
   // Google Ads se lee a través de Analytics, así que cae con la misma llave.
   const conectadas: Record<string, string> = {
     ...(enVivo ? { ga4: "● Conectado en vivo", google: "● En vivo vía Analytics" } : {}),
@@ -37,10 +66,10 @@ export default async function Medicion() {
     <div className="pila">
       <Seccion
         titulo="Salud de la medición"
-        bajada="Si esto está malo, todos los números de las otras dos vistas mienten. Por eso se revisa primero."
+        bajada="Si esto está malo, todos los números de las otras vistas mienten. Las tres primeras filas se comprueban solas en cada visita; el resto se revisa a mano."
       >
         <Tarjeta>
-          {SALUD.map((s) => (
+          {salud.map((s) => (
             <div className="salud-fila" key={s.que}>
               <div className="txt">
                 <b>{s.que}</b>

@@ -300,3 +300,15 @@ ul.tareas small { color: var(--tinta2); font-size: 12.5px; }
 .en-vivo i { width: 8px; height: 8px; border-radius: 99px; background: var(--sitio); animation: latido 2s ease-in-out infinite; }
 @keyframes latido { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .en-vivo i { animation: none; } }
+
+/* ── Esqueleto: lo que se ve mientras llegan los datos ────── */
+.hueso {
+  background: linear-gradient(90deg, var(--borde) 25%, #e3e8f2 50%, var(--borde) 75%);
+  background-size: 200% 100%; border-radius: 10px; animation: hueso 1.4s ease-in-out infinite;
+}
+.hueso.tarjeta-hueso { height: 220px; border-radius: var(--r-g); }
+.hueso.kpi-hueso { height: 96px; }
+.hueso.filtros-hueso { height: 62px; border-radius: var(--r-g); }
+.hueso.linea-hueso { height: 14px; width: 40%; margin-bottom: 10px; }
+@keyframes hueso { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .hueso { animation: none; } }

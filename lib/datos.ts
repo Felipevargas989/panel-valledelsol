@@ -241,12 +241,6 @@ export const SALUD: Array<{ que: string; estado: Estado; detalle: string }> = [
       "Bajaron de unas 27 diarias a 4 tras apagar el seguimiento sin código el 14-09. Deberían llegar a cero; si no, la causa era otra.",
   },
   {
-    que: "Dominio sin verificar en Meta",
-    estado: "falta",
-    detalle:
-      "valledelsolquillon.cl no está verificado. Falta un registro TXT en Cloudflare; sin eso la medición en iPhone queda coja.",
-  },
-  {
     que: "Eventos clave de Analytics con ruido",
     estado: "vigilar",
     detalle:

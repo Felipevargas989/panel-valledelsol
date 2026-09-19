@@ -86,11 +86,10 @@ export default async function Conversiones({
   // cerrado. Queda en caché una hora, igual que el resto.
   const tope12 = conectado ? sumarDias(hoyEnChile(), -1) : RANGO_DATOS.hasta;
   const inicioAnual = `${Number(tope12.slice(0, 4)) - 1}-01-01`;
-  const [ahora, antesDe, haceAnio, anual] = await Promise.all([
+  const [ahora, antesDe, haceAnio] = await Promise.all([
     filasDelPeriodo(desde, hasta),
     filasDelPeriodo(previo.desde, previo.hasta),
     filasDelPeriodo(haceUnAnio(desde), haceUnAnio(hasta)),
-    conectado ? serieAnual(inicioAnual, tope12) : null,
   ]);
   const filas = ahora.filas;
   const hoy = resumir(filas);
@@ -104,12 +103,6 @@ export default async function Conversiones({
   const clicsAnio = serieDiaria(haceAnio.filas, haceUnAnio(desde), haceUnAnio(hasta), "clics");
   const hayAnio = haceAnio.filas.length > 0;
   const total = (xs: Array<{ total: number }>) => xs.reduce((a, d) => a + d.total, 0);
-
-  const mensual = (campo: "inversion" | "impresiones" | "clics") =>
-    anual ? mesesDelAnio(anual.serie(campo), tope12) : null;
-  const gastoMes = mensual("inversion");
-  const imprMes = mensual("impresiones");
-  const clicsMes = mensual("clics");
 
   const campanas = porCampana(filas);
   const campanasAntes = new Map(porCampana(antesDe.filas).map((c) => [c.campana, c]));
@@ -206,41 +199,12 @@ export default async function Conversiones({
         ) : null}
       </Seccion>
 
-      {gastoMes && imprMes && clicsMes ? (
-        <Seccion
-          titulo={`Mes a mes: ${imprMes.anio} contra ${imprMes.anio - 1}`}
-          bajada={`Google Ads y Meta sumados. Gris es ${imprMes.anio - 1}; oscuro, ${imprMes.anio}. El mes en curso se compara contra los mismos días del año pasado, para no poner un mes a medias contra uno completo. No cambia con el filtro de fechas.`}
-        >
-          {anual?.faltaMeta || anual?.faltaGoogle ? (
-            <div className="aviso ojo" style={{ marginBottom: 14 }}>
-              <b>Ojo: estos tres gráficos están incompletos.</b>{" "}
-              {anual.faltaMeta && anual.faltaGoogle
-                ? "Ni Meta ni Google Ads respondieron."
-                : anual.faltaMeta
-                  ? "Meta no respondió, así que solo se ve Google Ads: el gasto real fue más alto."
-                  : "Google Ads no respondió, así que solo se ve Meta: el gasto real fue más alto."}{" "}
-              Se arreglan solos cuando la fuente vuelva a responder.
-            </div>
-          ) : null}
-
-          {/* Uno debajo del otro: doce meses con dos barras cada uno necesitan
-              el ancho completo para leerse. */}
-          <div className="pila">
-            <Tarjeta titulo="Inversión total en publicidad por mes" extra="Google Ads + Meta"
-                     nota={notaMeses(gastoMes, "invertidos", plata)}>
-              <MesesAnio {...gastoMes} color="total" formato="plata" />
-            </Tarjeta>
-            <Tarjeta titulo="Impresiones por mes" nota={notaMeses(imprMes, "impresiones")}>
-              <MesesAnio {...imprMes} color="total" formato="numero" />
-            </Tarjeta>
-            <Tarjeta titulo="Clics por mes" nota={notaMeses(clicsMes, "clics")}>
-              <MesesAnio {...clicsMes} color="total" formato="numero" />
-            </Tarjeta>
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <Leyenda items={[[String(imprMes.anio), "var(--tinta)"], [String(imprMes.anio - 1), COLOR_ANTERIOR]]} />
-          </div>
-        </Seccion>
+      {conectado ? (
+        /* El año y medio de historia es la consulta más pesada: llega por su
+           cuenta, sin frenar los indicadores de arriba. */
+        <Suspense fallback={<EsqueletoMesAMes />}>
+          <MesAMes desde={inicioAnual} hasta={tope12} />
+        </Suspense>
       ) : null}
 
       <Seccion
@@ -361,6 +325,65 @@ export default async function Conversiones({
         Las campañas actuales de Google partieron el 14 de septiembre.
       </p>
     </div>
+  );
+}
+
+async function MesAMes({ desde, hasta }: { desde: string; hasta: string }) {
+  const anual = await serieAnual(desde, hasta);
+  if (!anual) return null;
+  const mensual = (campo: "inversion" | "impresiones" | "clics") => mesesDelAnio(anual.serie(campo), hasta);
+  const gastoMes = mensual("inversion");
+  const imprMes = mensual("impresiones");
+  const clicsMes = mensual("clics");
+
+  return (
+    <Seccion
+      titulo={`Mes a mes: ${imprMes.anio} contra ${imprMes.anio - 1}`}
+      bajada={`Google Ads y Meta sumados. Gris es ${imprMes.anio - 1}; oscuro, ${imprMes.anio}. El mes en curso se compara contra los mismos días del año pasado, para no poner un mes a medias contra uno completo. No cambia con el filtro de fechas.`}
+    >
+      {anual.faltaMeta || anual.faltaGoogle ? (
+        <div className="aviso ojo" style={{ marginBottom: 14 }}>
+          <b>Ojo: estos tres gráficos están incompletos.</b>{" "}
+          {anual.faltaMeta && anual.faltaGoogle
+            ? "Ni Meta ni Google Ads respondieron."
+            : anual.faltaMeta
+              ? "Meta no respondió, así que solo se ve Google Ads: el gasto real fue más alto."
+              : "Google Ads no respondió, así que solo se ve Meta: el gasto real fue más alto."}{" "}
+          Se arreglan solos cuando la fuente vuelva a responder.
+        </div>
+      ) : null}
+
+      {/* Uno debajo del otro: doce meses con dos barras cada uno necesitan
+          el ancho completo para leerse. */}
+      <div className="pila">
+        <Tarjeta titulo="Inversión total en publicidad por mes" extra="Google Ads + Meta"
+                 nota={notaMeses(gastoMes, "invertidos", plata)}>
+          <MesesAnio {...gastoMes} color="total" formato="plata" />
+        </Tarjeta>
+        <Tarjeta titulo="Impresiones por mes" nota={notaMeses(imprMes, "impresiones")}>
+          <MesesAnio {...imprMes} color="total" formato="numero" />
+        </Tarjeta>
+        <Tarjeta titulo="Clics por mes" nota={notaMeses(clicsMes, "clics")}>
+          <MesesAnio {...clicsMes} color="total" formato="numero" />
+        </Tarjeta>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <Leyenda items={[[String(imprMes.anio), "var(--tinta)"], [String(imprMes.anio - 1), COLOR_ANTERIOR]]} />
+      </div>
+    </Seccion>
+  );
+}
+
+function EsqueletoMesAMes() {
+  return (
+    <section>
+      <div className="hueso linea-hueso" />
+      <div className="pila">
+        <div className="hueso tarjeta-hueso" />
+        <div className="hueso tarjeta-hueso" />
+        <div className="hueso tarjeta-hueso" />
+      </div>
+    </section>
   );
 }
 
