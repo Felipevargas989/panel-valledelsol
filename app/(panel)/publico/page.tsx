@@ -1,9 +1,12 @@
+import { Suspense } from "react";
+import FiltroFechas from "../../../components/FiltroFechas";
 import { BarrasH, type FilaBarra } from "../../../components/graficos";
 import { Seccion, Tarjeta, Leyenda } from "../../../components/ui";
 import { PUBLICO } from "../../../lib/datos";
 import { plata, numero, porcentaje, sumarDias, hoyEnChile, fechaCorta, duracionTexto } from "../../../lib/calculos";
 import { datosSitio, ga4Conectado } from "../../../lib/ga4";
 import { metaConectado, metaPublico, explicarErrorMeta, type PublicoMeta } from "../../../lib/meta";
+import { baseConectada, publicoMetaDesdeBase, sitioDesdeBase, INICIO_BASE } from "../../../lib/base";
 
 export const dynamic = "force-dynamic";
 
@@ -26,18 +29,16 @@ type Sitio = {
 
 /** Últimos 30 días cerrados desde Analytics; si no está conectado o falla,
  *  la foto cargada a mano el 15-09. */
-async function leerSitio(): Promise<Sitio> {
+async function leerSitio(desde: string, hasta: string): Promise<Sitio> {
   const g = PUBLICO.ga;
   const foto: Sitio = {
     enVivo: false, periodo: PUBLICO.periodoGa, usuarios: g.usuarios, sesiones: g.sesiones,
     interaccion: g.interaccion, tiempoMedio: g.tiempoMedio, canales: g.canales, ciudades: g.ciudades,
     dispositivo: g.dispositivo, sistema: g.sistema, paginas: g.paginas,
   };
-  if (!ga4Conectado()) return foto;
+  if (!baseConectada() && !ga4Conectado()) return foto;
   try {
-    const hasta = sumarDias(hoyEnChile(), -1);
-    const desde = sumarDias(hasta, -29);
-    const d = await datosSitio(desde, hasta);
+    const d = baseConectada() ? await sitioDesdeBase(desde, hasta) : await datosSitio(desde, hasta);
     return {
       enVivo: true,
       periodo: `${fechaCorta(desde)} – ${fechaCorta(hasta)} · en vivo`,
@@ -60,26 +61,35 @@ type Meta = PublicoMeta & { enVivo: boolean; periodo: string; error: string | nu
 
 /** Últimos 30 días cerrados desde la API de Meta, todas las campañas; si no
  *  está conectada o falla, la foto de Cabañas cargada a mano el 15-09. */
-async function leerMeta(): Promise<Meta> {
+async function leerMeta(desde: string, hasta: string): Promise<Meta> {
   const P = PUBLICO;
   const foto: Meta = {
     enVivo: false, periodo: P.periodoMeta, error: null, edad: P.edad, genero: P.genero,
     plataforma: P.plataforma, ubicaciones: P.ubicaciones, regiones: P.regiones,
   };
-  if (!metaConectado()) return foto;
+  if (!baseConectada() && !metaConectado()) return foto;
   try {
-    const hasta = sumarDias(hoyEnChile(), -1);
-    const desde = sumarDias(hasta, -29);
-    const d = await metaPublico(desde, hasta);
+    const d = baseConectada() ? await publicoMetaDesdeBase(desde, hasta) : await metaPublico(desde, hasta);
     return { ...d, enVivo: true, error: null, periodo: `${fechaCorta(desde)} – ${fechaCorta(hasta)} · en vivo` };
   } catch (e) {
     return { ...foto, error: explicarErrorMeta(e) };
   }
 }
 
-export default async function Publico() {
+export default async function Publico({
+  searchParams,
+}: {
+  searchParams: Promise<{ desde?: string; hasta?: string }>;
+}) {
   const P = PUBLICO;
-  const [M, S] = await Promise.all([leerMeta(), leerSitio()]);
+  const conBase = baseConectada();
+  // Últimos 30 días cerrados por defecto. Con la base propia el rango se
+  // puede cambiar; sin ella, la radiografía es de período fijo.
+  const ayer = sumarDias(hoyEnChile(), -1);
+  const sp = await searchParams;
+  const hasta = conBase && sp.hasta && sp.hasta <= hoyEnChile() ? sp.hasta : ayer;
+  const desde = conBase && sp.desde && sp.desde <= hasta ? sp.desde : sumarDias(hasta, -29);
+  const [M, S] = await Promise.all([leerMeta(desde, hasta), leerSitio(desde, hasta)]);
 
   // Conversaciones con su costo al lado
   const conCosto = (xs: Array<[string, number, number]>): FilaBarra[] =>
@@ -113,13 +123,25 @@ export default async function Publico() {
 
   return (
     <div className="pila">
-      <div className="aviso info">
-        <b>Estas cifras no cambian con el filtro de fechas.</b> Son el retrato de quién te ve, y para eso
-        hace falta el período completo: con pocos días las proporciones se vuelven ruido.{" "}
-        {mismoPeriodo
-          ? "Meta y el sitio cubren los mismos últimos 30 días cerrados y se actualizan solos."
-          : `Meta va del ${M.periodo} y el sitio del ${S.periodo}.`}
-      </div>
+      {conBase ? (
+        <>
+          <Suspense fallback={<div className="filtros" style={{ minHeight: 62 }} />}>
+            <FiltroFechas desde={desde} hasta={hasta} min={INICIO_BASE} max={ayer} atajos={[30, 90, 180]} conTodo={false} />
+          </Suspense>
+          <div className="aviso info">
+            <b>Con pocos días las proporciones se vuelven ruido.</b> Treinta días es un buen mínimo para leer quién te
+            ve; la radiografía de Meta existe en la base desde el 17 de junio de 2026.
+          </div>
+        </>
+      ) : (
+        <div className="aviso info">
+          <b>Estas cifras no cambian con el filtro de fechas.</b> Son el retrato de quién te ve, y para eso
+          hace falta el período completo: con pocos días las proporciones se vuelven ruido.{" "}
+          {mismoPeriodo
+            ? "Meta y el sitio cubren los mismos últimos 30 días cerrados y se actualizan solos."
+            : `Meta va del ${M.periodo} y el sitio del ${S.periodo}.`}
+        </div>
+      )}
 
       {M.error ? (
         <div className="aviso ojo">

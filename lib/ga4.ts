@@ -203,7 +203,7 @@ export const EVENTOS: Record<string, string> = {
 // viejo que NO son conversiones: son simples visitas a una página. Medido el
 // 16-09-2026: en 28 días fueron 502 de las 582 «conversiones» que mostraba
 // Analytics. Se muestran aparte, con su nombre real, y no se suman.
-const HEREDADOS: Record<string, string> = {
+export const HEREDADOS: Record<string, string> = {
   pagina_cabanas: "Vio la página de cabañas",
   paseos_curso: "Vio paseos de curso",
   matrimonios: "Vio matrimonios",
@@ -599,12 +599,15 @@ export async function leerSitioPorDia(desde: string, hasta: string): Promise<Sit
       requests: [
         porDia("operatingSystem", ["sessions", "activeUsers"]),
         porDia("pageTitle", ["screenPageViews"]),
+        // Todos los eventos clave, nuestros y heredados, para mostrar cuáles
+        // cuenta el panel y cuáles no.
+        porDia("eventName", ["keyEvents"]),
       ],
     }),
   ]);
   const [rTot, rConv, rCanal, rCanalConv, rFuente] = a.reports ?? [];
   const [rFuenteConv, rEntrada, rEntradaConv, rCiudad, rAparato] = b.reports ?? [];
-  const [rSistema, rPagina] = c.reports ?? [];
+  const [rSistema, rPagina, rEvento] = c.reports ?? [];
 
   const fecha = (t: string) => `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}`;
   const convDia = new Map(filas(rConv).map((f) => [f.d[0], f.m[0]]));
@@ -634,6 +637,9 @@ export async function leerSitioPorDia(desde: string, hasta: string): Promise<Sit
   agregar("aparato", rAparato, (v) => DISPOSITIVOS[v] ?? sinDato(v));
   agregar("sistema", rSistema, SISTEMA);
   agregar("pagina", rPagina, (v) => v, undefined, true);
+  for (const f of filas(rEvento)) {
+    if (f.m[0] > 0) desgloses.push({ fecha: fecha(f.d[0]), tipo: "evento", clave: f.d[1], a: 0, b: 0, c: f.m[0] });
+  }
 
   return { dias, desgloses };
 }

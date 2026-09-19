@@ -9,6 +9,7 @@ import {
 } from "../../../lib/calculos";
 import { ga4Conectado, googleAdsDias, explicarError } from "../../../lib/ga4";
 import { metaConectado, metaDias, metaTotalesDia, explicarErrorMeta } from "../../../lib/meta";
+import { baseConectada, leerCampanaDia, serieCampanasDesdeBase, ultimoDiaGuardado, INICIO_BASE } from "../../../lib/base";
 
 export const dynamic = "force-dynamic";
 // La comparación anual pide año y medio a dos fuentes: 10 segundos no alcanzan.
@@ -17,6 +18,11 @@ export const maxDuration = 30;
 /** Meta se lee de su API y Google Ads desde Analytics. Si alguna no está
  *  conectada o no responde, esa parte vuelve a la carga manual y se avisa. */
 async function filasDelPeriodo(desde: string, hasta: string) {
+  // Con la base propia no se toca ninguna API: se lee lo que trajo la ingesta.
+  if (baseConectada()) {
+    const filas = await leerCampanaDia(desde, hasta);
+    return { filas, metaEnVivo: true, googleEnVivo: true, errorMeta: null as string | null, errorGoogle: null as string | null };
+  }
   const manual = enRango(desde, hasta);
 
   const meta = metaConectado()
@@ -47,6 +53,11 @@ async function filasDelPeriodo(desde: string, hasta: string) {
  *  Cada fuente se pide aparte: si una falla, la otra igual se muestra y el
  *  panel lo dice, porque un gráfico con la mitad del gasto miente. */
 async function serieAnual(desde: string, hasta: string) {
+  if (baseConectada()) {
+    const dias = await serieCampanasDesdeBase(desde, hasta);
+    const serie = (campo: "inversion" | "impresiones" | "clics") => dias.map((d) => ({ fecha: d.fecha, valor: d[campo] }));
+    return { serie, faltaMeta: false, faltaGoogle: false };
+  }
   const [meta, google] = await Promise.all([
     metaConectado() ? metaTotalesDia(desde, hasta).catch(() => null) : Promise.resolve(null),
     ga4Conectado() ? googleAdsDias(desde, hasta).catch(() => null) : Promise.resolve(null),
@@ -75,7 +86,8 @@ export default async function Conversiones({
 }) {
   // Con alguna fuente en vivo el período llega hasta ayer (el día de hoy aún
   // no cierra); sin conexión, hasta el último día cargado a mano.
-  const conectado = ga4Conectado() || metaConectado();
+  const conBase = baseConectada();
+  const conectado = conBase || ga4Conectado() || metaConectado();
   const tope = conectado ? sumarDias(hoyEnChile(), -1) : RANGO_DATOS.hasta;
   const sp = await searchParams;
   const hasta = sp.hasta && sp.hasta <= hoyEnChile() ? sp.hasta : tope;
@@ -94,7 +106,8 @@ export default async function Conversiones({
   const filas = ahora.filas;
   const hoy = resumir(filas);
   const antes = resumir(antesDe.filas);
-  const metaIncompleto = !ahora.metaEnVivo && conectado && hasta > ULTIMO_DIA_META;
+  const metaIncompleto = !conBase && !ahora.metaEnVivo && conectado && hasta > ULTIMO_DIA_META;
+  const ultimoDia = conBase ? await ultimoDiaGuardado() : {};
 
   const gastoDia = serieDiaria(filas, desde, hasta, "inversion");
   const imprDia = serieDiaria(filas, desde, hasta, "impresiones");
@@ -111,7 +124,7 @@ export default async function Conversiones({
   return (
     <div className="pila">
       <Suspense fallback={<div className="filtros" style={{ minHeight: 62 }} />}>
-        <FiltroFechas desde={desde} hasta={hasta} min={conectado ? "2025-01-01" : RANGO_DATOS.desde}
+        <FiltroFechas desde={desde} hasta={hasta} min={conBase ? INICIO_BASE : conectado ? "2025-01-01" : RANGO_DATOS.desde}
                       max={conectado ? hoyEnChile() : RANGO_DATOS.hasta} />
       </Suspense>
 
@@ -316,10 +329,18 @@ export default async function Conversiones({
 
       <p className="pie-pagina">
         Período mostrado: {fechaLarga(desde)} – {fechaLarga(hasta)}.{" "}
-        {ahora.metaEnVivo
+        {conBase ? (
+          <>
+            Datos de la base propia del panel, que se actualiza cada mañana (Meta al{" "}
+            {ultimoDia.meta ? fechaLarga(ultimoDia.meta) : "—"}, Google al{" "}
+            {ultimoDia.google ? fechaLarga(ultimoDia.google) : "—"}). Para traer el día de hoy, usa «Actualizar hoy» en
+            Medición.
+          </>
+        ) : null}
+        {!conBase && ahora.metaEnVivo
           ? "Meta en vivo desde su API, refrescado cada hora."
-          : `Meta cargado a mano hasta el ${fechaLarga(ULTIMO_DIA_META)}.`}{" "}
-        {ahora.googleEnVivo
+          : conBase ? "" : `Meta cargado a mano hasta el ${fechaLarga(ULTIMO_DIA_META)}.`}{" "}
+        {conBase ? "" : ahora.googleEnVivo
           ? "Google Ads en vivo desde Analytics, refrescado cada hora."
           : "Google Ads cargado a mano."}{" "}
         Las campañas actuales de Google partieron el 14 de septiembre.

@@ -140,3 +140,163 @@ export async function ultimoDiaGuardado(): Promise<Record<string, string | null>
   )) as Array<{ canal: string; fecha: string }>;
   return Object.fromEntries(filas.map((f) => [f.canal, f.fecha]));
 }
+
+// ── Lecturas para las vistas (mismas formas que la v1) ───────
+// Las páginas reciben exactamente los mismos objetos que antes recibían de
+// las APIs, así que el cambio de fuente no las obliga a cambiar.
+import { EVENTOS, HEREDADOS, type DatosSitio, type Totales } from "./ga4";
+import type { PublicoMeta } from "./meta";
+import { periodoAnterior, sumarDias } from "./calculos";
+
+/** Consulta tipada: Neon devuelve filas genéricas y acá se les pone nombre. */
+async function consulta<T>(texto: string, valores: unknown[] = []): Promise<T[]> {
+  return (await sql().query(texto, valores)) as T[];
+}
+
+/** Cuándo fue la última corrida que incluyó el día de hoy (para el freno del botón). */
+export async function ultimaIngestaDeHoy(hoy: string): Promise<string | null> {
+  const filas = (await sql().query(
+    `select max(inicio)::text as inicio from panel.ingesta where hasta = $1`,
+    [hoy],
+  )) as Array<{ inicio: string | null }>;
+  return filas[0]?.inicio ?? null;
+}
+
+const sinDato = (v: string) => (!v || v === "(not set)" ? "Sin dato" : v);
+
+async function totalesSitio(desde: string, hasta: string): Promise<Totales> {
+  const f = (await sql().query(
+    `select coalesce(sum(personas),0)::int personas, coalesce(sum(nuevos),0)::int nuevos,
+            coalesce(sum(sesiones),0)::int sesiones, coalesce(sum(interactivas),0)::int interactivas,
+            coalesce(sum(conversiones),0)::int conversiones,
+            case when sum(sesiones) > 0 then sum(duracion_media * sesiones) / sum(sesiones) else 0 end as duracion
+       from panel.sitio_dia where fecha between $1 and $2`,
+    [desde, hasta],
+  )) as Array<Record<string, number>>;
+  const t = f[0] ?? {};
+  return {
+    personas: t.personas ?? 0, nuevos: t.nuevos ?? 0, sesiones: t.sesiones ?? 0,
+    interactivas: t.interactivas ?? 0, conversiones: t.conversiones ?? 0, duracionMedia: Number(t.duracion ?? 0),
+  };
+}
+
+/** Un desglose sumado en el rango, ordenado de mayor a menor. */
+async function desgloseSitio(desde: string, hasta: string, tipo: string, limite: number) {
+  return (await sql().query(
+    `select clave, sum(sesiones)::int sesiones, sum(personas)::int personas, sum(conversiones)::int conversiones
+       from panel.sitio_desglose where fecha between $1 and $2 and tipo = $3
+      group by clave order by 2 desc, 3 desc limit $4`,
+    [desde, hasta, tipo, limite],
+  )) as Array<{ clave: string; sesiones: number; personas: number; conversiones: number }>;
+}
+
+/** El sitio en un rango, leído de la base: la misma forma que entregaba Analytics. */
+export async function sitioDesdeBase(desde: string, hasta: string): Promise<DatosSitio> {
+  const previo = periodoAnterior(desde, hasta);
+  const [actual, anterior, dias, canales, fuentes, entradas, paginas, ciudades, aparatos, sistemas, eventos] =
+    await Promise.all([
+      totalesSitio(desde, hasta),
+      totalesSitio(previo.desde, previo.hasta),
+      consulta<{ fecha: string; sesiones: number; conversiones: number; personas: number }>(
+        `select to_char(fecha,'YYYY-MM-DD') fecha, sesiones, conversiones, personas
+           from panel.sitio_dia where fecha between $1 and $2 order by fecha`, [desde, hasta],
+      ),
+      desgloseSitio(desde, hasta, "canal", 12),
+      desgloseSitio(desde, hasta, "fuente", 10),
+      desgloseSitio(desde, hasta, "entrada", 10),
+      consulta<{ clave: string; vistas: number }>(
+        `select clave, sum(sesiones)::int vistas from panel.sitio_desglose
+          where fecha between $1 and $2 and tipo = 'pagina' group by clave order by 2 desc limit 10`, [desde, hasta],
+      ),
+      desgloseSitio(desde, hasta, "ciudad", 10),
+      desgloseSitio(desde, hasta, "aparato", 5),
+      desgloseSitio(desde, hasta, "sistema", 7),
+      consulta<{ clave: string; cantidad: number }>(
+        `select clave, sum(conversiones)::int cantidad from panel.sitio_desglose
+          where fecha between $1 and $2 and tipo = 'evento' group by clave order by 2 desc`, [desde, hasta],
+      ),
+    ]);
+
+  // Los días sin fila (sin visitas o sin ingesta) se rellenan con cero.
+  const porDia = new Map(dias.map((d) => [d.fecha, d]));
+  const serie: DatosSitio["dias"] = [];
+  for (let d = desde; d <= hasta; d = sumarDias(d, 1)) {
+    const x = porDia.get(d);
+    serie.push({ fecha: d, sesiones: x?.sesiones ?? 0, conversiones: x?.conversiones ?? 0, personas: x?.personas ?? 0 });
+  }
+
+  const porPersonas = (xs: Array<{ clave: string; personas: number }>): Array<[string, number]> =>
+    xs.map((x): [string, number] => [sinDato(x.clave), x.personas]).sort((a, b) => b[1] - a[1]);
+
+  return {
+    desde, hasta, actual, anterior, dias: serie,
+    canales: canales.map((c) => ({ nombre: c.clave, sesiones: c.sesiones, conversiones: c.conversiones })),
+    fuentes: fuentes.map((c) => ({ nombre: sinDato(c.clave), sesiones: c.sesiones, conversiones: c.conversiones })),
+    eventos: eventos.map((e) => ({
+      clave: e.clave, nombre: EVENTOS[e.clave] ?? HEREDADOS[e.clave] ?? e.clave,
+      cantidad: e.cantidad, nuestra: e.clave in EVENTOS,
+    })),
+    conversionesAnalytics: eventos.reduce((t, e) => t + e.cantidad, 0),
+    entradas: entradas.map((e) => ({
+      pagina: e.clave === "/" ? "Portada ( / )" : sinDato(e.clave), sesiones: e.sesiones, conversiones: e.conversiones,
+    })),
+    paginas: paginas.map((p): [string, number] => [sinDato(p.clave), p.vistas]),
+    ciudades: porPersonas(ciudades),
+    dispositivos: porPersonas(aparatos),
+    sistemas: porPersonas(sistemas),
+  };
+}
+
+const sinTildes = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const enTuZona = (region: string) => /bio ?bio|nuble/.test(sinTildes(region));
+
+/** La radiografía de Meta en un rango, leída de la base. */
+export async function publicoMetaDesdeBase(desde: string, hasta: string): Promise<PublicoMeta> {
+  const filas = (await sql().query(
+    `select tipo, clave, sum(gasto)::int gasto, sum(conversaciones)::int conversaciones, sum(contactos)::int contactos
+       from panel.meta_desglose where fecha between $1 and $2 group by tipo, clave`,
+    [desde, hasta],
+  )) as Array<{ tipo: string; clave: string; gasto: number; conversaciones: number; contactos: number }>;
+
+  const de = (tipo: string) => filas.filter((f) => f.tipo === tipo);
+  const conCosto = (tipo: string): Array<[string, number, number]> =>
+    de(tipo)
+      .filter((f) => f.conversaciones > 0)
+      .map((f) => [f.clave, f.conversaciones, Math.round(f.gasto / f.conversaciones)]);
+  const porConv = (a: [string, number, number], b: [string, number, number]) => b[1] - a[1];
+
+  return {
+    edad: conCosto("edad").sort((a, b) => a[0].localeCompare(b[0])),
+    genero: conCosto("genero").sort(porConv),
+    plataforma: conCosto("plataforma").sort(porConv),
+    ubicaciones: conCosto("ubicacion").sort(porConv).slice(0, 6),
+    regiones: de("region")
+      .filter((f) => f.gasto >= 1)
+      .map((f): [string, number, number, boolean] => [f.clave, f.gasto, f.contactos, enTuZona(f.clave)])
+      .sort((a, b) => b[1] - a[1]),
+  };
+}
+
+/** Totales por día de las campañas (Meta + Google), para el mes a mes. */
+export async function serieCampanasDesdeBase(desde: string, hasta: string) {
+  return (await sql().query(
+    `select to_char(fecha,'YYYY-MM-DD') fecha, sum(inversion)::int inversion, sum(impresiones)::int impresiones, sum(clics)::int clics
+       from panel.campana_dia where fecha between $1 and $2 group by fecha order by fecha`,
+    [desde, hasta],
+  )) as Array<{ fecha: string; inversion: number; impresiones: number; clics: number }>;
+}
+
+/** Visitas por día, para la línea «hace un año» y el mes a mes del sitio. */
+export async function visitasDesdeBase(desde: string, hasta: string): Promise<Array<{ fecha: string; valor: number }>> {
+  const filas = await consulta<{ fecha: string; valor: number }>(
+    `select to_char(fecha,'YYYY-MM-DD') fecha, sesiones valor from panel.sitio_dia where fecha between $1 and $2`,
+    [desde, hasta],
+  );
+  const porDia = new Map(filas.map((f) => [f.fecha, f.valor]));
+  const serie: Array<{ fecha: string; valor: number }> = [];
+  for (let d = desde; d <= hasta; d = sumarDias(d, 1)) serie.push({ fecha: d, valor: porDia.get(d) ?? 0 });
+  return serie;
+}
+
+/** Primer día con datos en la base (para el filtro de fechas). */
+export const INICIO_BASE = "2025-01-01";

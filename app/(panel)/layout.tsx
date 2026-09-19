@@ -4,10 +4,16 @@ import { RANGO_DATOS } from "../../lib/datos";
 import { fechaLarga } from "../../lib/calculos";
 import { ga4Conectado } from "../../lib/ga4";
 import { metaConectado, metaResponde } from "../../lib/meta";
+import { baseConectada, ultimoDiaGuardado } from "../../lib/base";
 
 /** Los sellos preguntan a Meta si responde. Van aparte y en Suspense para
  *  que el encabezado y las pestañas se pinten al tiro, sin esperar a Meta. */
 async function Sellos() {
+  if (baseConectada()) {
+    const ultimo = await ultimoDiaGuardado().catch(() => ({} as Record<string, string | null>));
+    const al = ultimo.meta && ultimo.google ? (ultimo.meta < ultimo.google ? ultimo.meta : ultimo.google) : ultimo.meta ?? ultimo.google;
+    return <span className="sello">● Base propia · datos al {al ? fechaLarga(al) : "—"}</span>;
+  }
   const conAnalytics = ga4Conectado();
   const conMeta = await metaResponde();
   // Google Ads se lee a través de Analytics: cae con la misma llave.

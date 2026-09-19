@@ -4,6 +4,7 @@ import Ahora from "../../../components/Ahora";
 import { BarrasH, LineaDia, MesesAnio, ParDeGraficos, COLOR_ANTERIOR, type FilaBarra } from "../../../components/graficos";
 import { Kpi, Seccion, Tarjeta, Leyenda } from "../../../components/ui";
 import { datosSitio, visitasPorDia, ga4Conectado, explicarError, type DatosSitio } from "../../../lib/ga4";
+import { baseConectada, sitioDesdeBase, visitasDesdeBase, INICIO_BASE } from "../../../lib/base";
 import {
   variacion, numero, porcentaje, sumarDias, fechaLarga, hoyEnChile, duracionTexto as duracion,
   haceUnAnio, mesesDelAnio,
@@ -24,7 +25,8 @@ export default async function Sitio({
 }: {
   searchParams: Promise<{ desde?: string; hasta?: string }>;
 }) {
-  if (!ga4Conectado()) return <SinConectar />;
+  const conBase = baseConectada();
+  if (!conBase && !ga4Conectado()) return <SinConectar />;
 
   // Analytics termina de procesar un día al siguiente: por defecto el rango
   // llega hasta ayer, para no comparar un día a medias contra días completos.
@@ -37,12 +39,13 @@ export default async function Sitio({
   // La línea de hace un año y el mes a mes son extras: si fallan, la vista
   // sigue igual sin ellos.
   const inicioAnual = `${Number(ayer.slice(0, 4)) - 1}-01-01`;
+  const visitas = conBase ? visitasDesdeBase : visitasPorDia;
   const [anio, anual] = await Promise.all([
-    visitasPorDia(haceUnAnio(desde), haceUnAnio(hasta)).catch(() => null),
-    visitasPorDia(inicioAnual, ayer).catch(() => null),
+    visitas(haceUnAnio(desde), haceUnAnio(hasta)).catch(() => null),
+    visitas(inicioAnual, ayer).catch(() => null),
   ]);
   try {
-    d = await datosSitio(desde, hasta);
+    d = conBase ? await sitioDesdeBase(desde, hasta) : await datosSitio(desde, hasta);
   } catch (e) {
     return (
       <div className="pila">
@@ -80,13 +83,15 @@ export default async function Sitio({
       </Seccion>
 
       <Suspense fallback={<div className="filtros" style={{ minHeight: 62 }} />}>
-        <FiltroFechas desde={desde} hasta={hasta} min={INICIO_GA4} max={hoyEnChile()}
+        <FiltroFechas desde={desde} hasta={hasta} min={conBase ? INICIO_BASE : INICIO_GA4} max={hoyEnChile()}
                       atajos={[7, 14, 28, 90]} conTodo={false} />
       </Suspense>
 
       <Seccion
         titulo="El sitio en el período"
-        bajada="Conectado a Analytics: estos números salen directo de la propiedad Valle del Sol, sin carga manual. Se refrescan cada hora."
+        bajada={conBase
+          ? "Salen de la base propia del panel, que trae Analytics cada mañana. Personas es la suma de cada día: quien entra tres días cuenta tres veces."
+          : "Conectado a Analytics: estos números salen directo de la propiedad Valle del Sol, sin carga manual. Se refrescan cada hora."}
       >
         <div className="indicadores">
           <Kpi rotulo="Personas" familia="volumen" valor={numero(a.personas)}

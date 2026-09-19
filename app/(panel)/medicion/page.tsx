@@ -4,11 +4,17 @@ import { FUENTES } from "../../../lib/fuentes";
 import { ga4Conectado } from "../../../lib/ga4";
 import { metaConectado, metaResponde } from "../../../lib/meta";
 import { dominioVerificadoEnMeta } from "../../../lib/salud";
+import { baseConectada, ultimasIngestas, ultimoDiaGuardado, type Ingesta } from "../../../lib/base";
+import ActualizarHoy from "../../../components/ActualizarHoy";
+import { fechaCorta, numero } from "../../../lib/calculos";
 
 // Se arma en cada visita: muestra si Analytics está conectado en este momento.
 export const dynamic = "force-dynamic";
 
 const ETIQUETA_ESTADO = { bien: "Bien", vigilar: "Vigilar", falta: "Falta" } as const;
+const NOMBRE_FUENTE: Record<string, string> = {
+  meta: "Meta · campañas", "meta-publico": "Meta · público", google: "Google Ads", sitio: "Sitio (Analytics)",
+};
 const ETIQUETA_CAMPO = {
   medido: "medido",
   disponible: "disponible, falta conectar",
@@ -17,7 +23,17 @@ const ETIQUETA_CAMPO = {
 
 export default async function Medicion() {
   const enVivo = ga4Conectado();
-  const [conMeta, dominioOk] = await Promise.all([metaResponde(), dominioVerificadoEnMeta()]);
+  const conBase = baseConectada();
+  // Con la base propia no hace falta preguntarle a Meta si responde: lo dice
+  // la última ingesta.
+  const [conMetaVivo, dominioOk, ingestas, ultimoDia] = await Promise.all([
+    conBase ? Promise.resolve(true) : metaResponde(),
+    dominioVerificadoEnMeta(),
+    conBase ? ultimasIngestas(15).catch(() => [] as Ingesta[]) : Promise.resolve([] as Ingesta[]),
+    conBase ? ultimoDiaGuardado().catch(() => ({} as Record<string, string | null>)) : Promise.resolve({} as Record<string, string | null>),
+  ]);
+  const ultimaDe = (fuente: string) => ingestas.find((i) => i.fuente === fuente);
+  const conMeta = conBase ? ultimaDe("meta")?.estado !== "error" : conMetaVivo;
   const metaConLlave = metaConectado();
 
   // Estas filas se comprueban en cada visita; las de SALUD siguen a mano.
@@ -46,6 +62,19 @@ export default async function Medicion() {
         : "Falta la llave GA4_CREDENCIALES en Vercel.",
     },
   ];
+  if (conBase) {
+    const ultima = ingestas[0];
+    const fallas = ingestas.filter((i) => i.estado === "error");
+    vivas.unshift({
+      que: "Base propia del panel",
+      estado: !ultima ? "falta" : fallas.length ? "vigilar" : "bien",
+      detalle: !ultima
+        ? "La base existe pero todavía no tiene ingestas."
+        : fallas.length
+          ? `De las últimas ${ingestas.length} ingestas, ${fallas.length} fallaron. Detalle en el registro de abajo.`
+          : `Datos al ${ultimoDia.meta ? fechaCorta(ultimoDia.meta) : "—"} en Meta y al ${ultimoDia.google ? fechaCorta(ultimoDia.google) : "—"} en Google. La ingesta corre sola cada mañana y las vistas leen solo la base: mirar el panel no gasta cupo de ninguna API.`,
+    });
+  }
   const salud = [...vivas, ...SALUD];
   // Google Ads se lee a través de Analytics, así que cae con la misma llave.
   const conectadas: Record<string, string> = {
@@ -80,6 +109,41 @@ export default async function Medicion() {
           ))}
         </Tarjeta>
       </Seccion>
+
+      {conBase ? (
+        <Seccion
+          titulo="Ingestas"
+          bajada="Cada vez que el panel trae datos queda anotado acá. La corrida automática es a las 6 de la mañana; el botón trae el día de hoy a pedido (como mucho una vez cada media hora)."
+        >
+          <Tarjeta>
+            <div style={{ marginBottom: 14 }}><ActualizarHoy /></div>
+            <div className="tabla-marco">
+              <table>
+                <thead>
+                  <tr><th>Cuándo</th><th>Fuente</th><th>Rango</th><th>Filas</th><th>Estado</th></tr>
+                </thead>
+                <tbody>
+                  {ingestas.map((i) => (
+                    <tr key={i.id}>
+                      <td>{i.inicio.slice(0, 16).replace("T", " ")}</td>
+                      <td style={{ textAlign: "left" }}>{NOMBRE_FUENTE[i.fuente] ?? i.fuente}</td>
+                      <td>{fechaCorta(i.desde)} – {fechaCorta(i.hasta)}</td>
+                      <td className="n">{numero(i.filas)}</td>
+                      <td style={{ textAlign: "left" }}>
+                        <span className={`marca-estado ${i.estado === "ok" ? "bien" : "falta"}`}>
+                          {i.estado === "ok" ? "Bien" : "Falló"}
+                        </span>
+                        {i.error ? <div style={{ fontSize: 11.5, color: "var(--tinta3)", marginTop: 4 }}>{i.error}</div> : null}
+                      </td>
+                    </tr>
+                  ))}
+                  {!ingestas.length ? <tr><td colSpan={5}>Todavía no hay ingestas.</td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </Tarjeta>
+        </Seccion>
+      ) : null}
 
       <Seccion
         titulo="Qué hacer esta semana"
