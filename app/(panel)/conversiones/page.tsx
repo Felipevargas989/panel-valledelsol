@@ -150,7 +150,7 @@ export default async function Conversiones({
 
       <Seccion
         titulo="Los números del período"
-        bajada="Todos medidos, ninguno estimado. La flecha compara contra el período anterior del mismo largo. En los costos, la flecha hacia abajo es buena noticia."
+        bajada="Todos medidos, ninguno estimado. La flecha compara contra el período anterior del mismo largo; en los costos, hacia abajo es buena noticia. Consulta es un contacto por WhatsApp; cotización o reserva es lo más cerca de una venta que el panel puede medir hoy."
       >
         <div className="indicadores">
           <Kpi rotulo="Inversión" familia="costo" valor={plata(hoy.inversion)}
@@ -159,13 +159,14 @@ export default async function Conversiones({
                variacion={variacion(hoy.impresiones, antes.impresiones)} />
           <Kpi rotulo="Clics" familia="volumen" valor={numero(hoy.clics)}
                variacion={variacion(hoy.clics, antes.clics)} />
-          <Kpi rotulo="CTR" familia="eficiencia" valor={porcentaje(hoy.ctr)}
-               variacion={variacion(hoy.ctr, antes.ctr)} />
-          <Kpi rotulo="Leads" familia="volumen" valor={numero(hoy.leads)}
+          <Kpi rotulo="Consultas" familia="volumen" valor={numero(hoy.leads)}
                variacion={variacion(hoy.leads, antes.leads)}
-               pie="contactos reales" />
-          <Kpi rotulo="Costo por lead" familia="costo" valor={plata(hoy.cpl)}
-               variacion={variacion(hoy.cpl, antes.cpl, true)} />
+               pie="WhatsApp: Meta y Google" />
+          <Kpi rotulo="Cotizaciones y reservas" familia="volumen" valor={numero(hoy.cotizaciones)}
+               variacion={variacion(hoy.cotizaciones, antes.cotizaciones)}
+               pie="lo más cerca de una venta" />
+          <Kpi rotulo="Costo por cotización" familia="costo" valor={plata(hoy.costoCotizacion)}
+               variacion={variacion(hoy.costoCotizacion, antes.costoCotizacion, true)} />
         </div>
       </Seccion>
 
@@ -214,7 +215,7 @@ export default async function Conversiones({
 
       <Seccion
         titulo="Campaña por campaña"
-        bajada="Ordenadas por lo que gastaron. Δ compara contra el período anterior. Lead en Meta es una conversación de WhatsApp iniciada; en Google, una cotización enviada, una reserva pagada o un WhatsApp. Intención son los clics en «Cotizar» o «Reservar»: interés, pero la persona todavía no escribió."
+        bajada="Ordenadas por lo que gastaron. Δ compara contra el período anterior. Intención es apretar «Cotizar» o «Reservar». Consulta es un contacto por WhatsApp: en Meta, una conversación que de verdad empezó; en Google, el clic en el botón (quien aprieta y no escribe igual suma). Cotiza o reserva son formularios enviados y reservas pagadas: solo se miden en Google, porque las campañas de Meta llevan a WhatsApp y su cierre no se ve hasta conectar Eventia."
       >
         <div className="tabla-marco">
           <table>
@@ -229,9 +230,10 @@ export default async function Conversiones({
                 <th>Δ</th>
                 <th>CTR</th>
                 <th>CPC</th>
-                <th>Leads</th>
                 <th>Intención</th>
-                <th>Costo por lead</th>
+                <th>Consultas</th>
+                <th>Cotiza o reserva</th>
+                <th>Costo por cotización</th>
                 <th>Δ</th>
               </tr>
             </thead>
@@ -257,10 +259,11 @@ export default async function Conversiones({
                     <td><Var v={a ? variacion(c.clics, a.clics) : null} /></td>
                     <td className="n">{porcentaje(c.ctr)}</td>
                     <td className="n">{plata(c.cpc)}</td>
-                    <td className="n">{numero(c.leads)}</td>
                     <td className="n">{c.canal === "google" ? numero(c.intenciones) : "—"}</td>
-                    <td className="n">{plata(c.cpl)}</td>
-                    <td><Var v={a ? variacion(c.cpl, a.cpl, true) : null} /></td>
+                    <td className="n">{numero(c.leads)}</td>
+                    <td className="n">{c.canal === "google" ? numero(c.cotizaciones) : "—"}</td>
+                    <td className="n">{c.canal === "google" ? plata(c.costoCotizacion) : "—"}</td>
+                    <td><Var v={a && c.canal === "google" ? variacion(c.costoCotizacion, a.costoCotizacion, true) : null} /></td>
                   </tr>
                 );
               })}
@@ -276,10 +279,11 @@ export default async function Conversiones({
                 <td><Var v={variacion(hoy.clics, antes.clics)} /></td>
                 <td className="n">{porcentaje(hoy.ctr)}</td>
                 <td className="n">{plata(hoy.cpc)}</td>
-                <td className="n">{numero(hoy.leads)}</td>
                 <td className="n">{numero(hoy.intenciones)}</td>
-                <td className="n">{plata(hoy.cpl)}</td>
-                <td><Var v={variacion(hoy.cpl, antes.cpl, true)} /></td>
+                <td className="n">{numero(hoy.leads)}</td>
+                <td className="n">{numero(hoy.cotizaciones)}</td>
+                <td className="n">{plata(hoy.costoCotizacion)}</td>
+                <td><Var v={variacion(hoy.costoCotizacion, antes.costoCotizacion, true)} /></td>
               </tr>
             </tfoot>
           </table>
@@ -301,9 +305,12 @@ export default async function Conversiones({
                   ["Clics", numero(c.clics)],
                   ["CTR", porcentaje(c.ctr)],
                   ["CPC", plata(c.cpc)],
-                  ["Leads", numero(c.leads)],
                   ...(c.canal === "google" ? [["Intención", numero(c.intenciones)]] : []),
-                  ["Costo por lead", plata(c.cpl)],
+                  ["Consultas", numero(c.leads)],
+                  ["Costo por consulta", plata(c.cpl)],
+                  ...(c.canal === "google"
+                    ? [["Cotizaciones y reservas", numero(c.cotizaciones)], ["Costo por cotización", plata(c.costoCotizacion)]]
+                    : []),
                 ].map(([k, v]) => (
                   <div key={k} style={{
                     display: "flex", justifyContent: "space-between", gap: 12,

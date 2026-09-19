@@ -24,6 +24,10 @@ export type DiaCampana = {
   /** Clics en «Cotizar» o «Reservar»: interés, todavía no contacto.
    *  Solo existe para Google (sale de Analytics). */
   intenciones?: number | null;
+  /** Cotizaciones enviadas y reservas pagadas: lo más cerca de una venta que
+   *  el panel puede medir hoy. Solo Google: las campañas de Meta llevan a
+   *  WhatsApp y su cierre no se ve hasta conectar Eventia. */
+  cotizaciones?: number | null;
 };
 
 // ───────────────────────────────────────────────────────────

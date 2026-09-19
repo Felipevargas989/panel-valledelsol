@@ -30,16 +30,17 @@ export async function guardarCampanaDia(filas: DiaCampana[]) {
     const tanda = filas.slice(i, i + 200);
     await q.query(
       `insert into panel.campana_dia
-         (fecha, canal, campana, inversion, impresiones, alcance, clics, leads, intenciones, actualizado_en)
-       select * from unnest($1::date[], $2::text[], $3::text[], $4::int[], $5::int[], $6::int[], $7::int[], $8::int[], $9::int[], $10::timestamptz[])
+         (fecha, canal, campana, inversion, impresiones, alcance, clics, leads, intenciones, cotizaciones, actualizado_en)
+       select * from unnest($1::date[], $2::text[], $3::text[], $4::int[], $5::int[], $6::int[], $7::int[], $8::int[], $9::int[], $10::int[], $11::timestamptz[])
        on conflict (fecha, canal, campana) do update set
          inversion = excluded.inversion, impresiones = excluded.impresiones, alcance = excluded.alcance,
          clics = excluded.clics, leads = excluded.leads, intenciones = excluded.intenciones,
-         actualizado_en = excluded.actualizado_en`,
+         cotizaciones = excluded.cotizaciones, actualizado_en = excluded.actualizado_en`,
       [
         tanda.map((f) => f.fecha), tanda.map((f) => f.canal), tanda.map((f) => f.campana),
         tanda.map((f) => f.inversion), tanda.map((f) => f.impresiones), tanda.map((f) => f.alcance),
         tanda.map((f) => f.clics), tanda.map((f) => f.leads ?? null), tanda.map((f) => f.intenciones ?? null),
+        tanda.map((f) => f.cotizaciones ?? null),
         tanda.map(() => new Date().toISOString()),
       ],
     );
@@ -111,7 +112,7 @@ export async function registrarIngesta(r: {
 // ── Lectura (la usan las vistas) ─────────────────────────────
 export async function leerCampanaDia(desde: string, hasta: string): Promise<DiaCampana[]> {
   const filas = await sql().query(
-    `select to_char(fecha, 'YYYY-MM-DD') as fecha, canal, campana, inversion, impresiones, alcance, clics, leads, intenciones
+    `select to_char(fecha, 'YYYY-MM-DD') as fecha, canal, campana, inversion, impresiones, alcance, clics, leads, intenciones, cotizaciones
        from panel.campana_dia where fecha between $1 and $2 order by fecha, canal, campana`,
     [desde, hasta],
   );

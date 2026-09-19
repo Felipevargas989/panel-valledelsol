@@ -462,13 +462,15 @@ export const ahoraMismo = unstable_cache(consultarAhora, ["ga4-ahora-v1"], { rev
 // Comprobado el 16-09-2026: el 14-09 calza exacto con lo que muestra Google
 // Ads (Eventos $10.663 · 10 clics · 164 impresiones).
 
-const LEADS_GOOGLE = [
-  "eventos_cotizacion_enviada",
-  "cabanas_reserva_pagada",
-  "eventos_whatsapp",
-  "cabanas_whatsapp",
-  "whatsapp_sin_linea",
-];
+// Tres niveles, decididos con Felipe el 19-09-2026 al ver que la campaña
+// «Cabañas · Parejas» marcaba 9 leads que eran 9 clics en el botón de
+// WhatsApp: el botón es una consulta, no una venta.
+//
+//   intención → apretó Cotizar o Reservar, todavía no contacta
+//   consulta  → apretó el botón de WhatsApp (en Meta: escribió de verdad)
+//   cotización → envió el formulario o pagó una reserva: esto es lo que vale
+const CONSULTAS_GOOGLE = ["eventos_whatsapp", "cabanas_whatsapp", "whatsapp_sin_linea"];
+const COTIZACIONES_GOOGLE = ["eventos_cotizacion_enviada", "cabanas_reserva_pagada"];
 const INTENCIONES_GOOGLE = ["eventos_cotizar", "cabanas_reservar"];
 
 async function consultarGoogleAds(desde: string, hasta: string): Promise<DiaCampana[]> {
@@ -492,11 +494,12 @@ async function consultarGoogleAds(desde: string, hasta: string): Promise<DiaCamp
         dimensionFilter: deGoogleAds,
         limit: 5000,
       },
-      { dateRanges: rango, dimensions: dims, metrics: [{ name: "keyEvents" }], dimensionFilter: eventos(LEADS_GOOGLE), limit: 5000 },
+      { dateRanges: rango, dimensions: dims, metrics: [{ name: "keyEvents" }], dimensionFilter: eventos(CONSULTAS_GOOGLE), limit: 5000 },
       { dateRanges: rango, dimensions: dims, metrics: [{ name: "keyEvents" }], dimensionFilter: eventos(INTENCIONES_GOOGLE), limit: 5000 },
+      { dateRanges: rango, dimensions: dims, metrics: [{ name: "keyEvents" }], dimensionFilter: eventos(COTIZACIONES_GOOGLE), limit: 5000 },
     ],
   });
-  const [rCosto, rLeads, rIntencion] = r.reports ?? [];
+  const [rCosto, rLeads, rIntencion, rCotiza] = r.reports ?? [];
 
   const mapa = new Map<string, DiaCampana>();
   const fecha = (t: string) => `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}`;
@@ -506,7 +509,7 @@ async function consultarGoogleAds(desde: string, hasta: string): Promise<DiaCamp
     if (!x) {
       x = {
         fecha: fecha(f.d[0]), canal: "google", campana: f.d[1],
-        inversion: 0, impresiones: 0, alcance: null, clics: 0, leads: 0, intenciones: 0,
+        inversion: 0, impresiones: 0, alcance: null, clics: 0, leads: 0, intenciones: 0, cotizaciones: 0,
       };
       mapa.set(clave, x);
     }
@@ -521,6 +524,7 @@ async function consultarGoogleAds(desde: string, hasta: string): Promise<DiaCamp
   }
   for (const f of filas(rLeads)) fila(f).leads = (fila(f).leads ?? 0) + f.m[0];
   for (const f of filas(rIntencion)) fila(f).intenciones = (fila(f).intenciones ?? 0) + f.m[0];
+  for (const f of filas(rCotiza)) fila(f).cotizaciones = (fila(f).cotizaciones ?? 0) + f.m[0];
 
   return [...mapa.values()]
     .map((x) => ({ ...x, inversion: Math.round(x.inversion) }))

@@ -73,15 +73,18 @@ export type Resumen = {
   clics: number;
   leads: number;
   intenciones: number;
+  cotizaciones: number;
   ctr: number;
   cpc: number;
   cpm: number;
   conversion: number;
   cpl: number;
+  /** Cuánto costó cada cotización enviada o reserva pagada. */
+  costoCotizacion: number;
 };
 
 export function resumir(filas: DiaCampana[]): Resumen {
-  let inversion = 0, impresiones = 0, alcance = 0, clics = 0, leads = 0, intenciones = 0;
+  let inversion = 0, impresiones = 0, alcance = 0, clics = 0, leads = 0, intenciones = 0, cotizaciones = 0;
 
   for (const f of filas) {
     inversion += f.inversion;
@@ -89,16 +92,18 @@ export function resumir(filas: DiaCampana[]): Resumen {
     alcance += f.alcance ?? 0;
     clics += f.clics;
     intenciones += f.intenciones ?? 0;
+    cotizaciones += f.cotizaciones ?? 0;
     leads += f.leads ?? 0;
   }
 
   return {
-    inversion, impresiones, alcance, clics, leads, intenciones,
+    inversion, impresiones, alcance, clics, leads, intenciones, cotizaciones,
     ctr: impresiones > 0 ? clics / impresiones : NaN,
     cpc: clics > 0 ? inversion / clics : NaN,
     cpm: impresiones > 0 ? (inversion / impresiones) * 1000 : NaN,
     conversion: clics > 0 ? leads / clics : NaN,
     cpl: leads > 0 ? inversion / leads : NaN,
+    costoCotizacion: cotizaciones > 0 ? inversion / cotizaciones : NaN,
   };
 }
 

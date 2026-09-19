@@ -42,7 +42,7 @@ Todas las tablas viven en el esquema `panel`.
 
 | Tabla | Clave | Columnas | Fuente |
 |---|---|---|---|
-| `campana_dia` | (fecha, canal, campana) | inversion, impresiones, alcance, clics, leads, intenciones, actualizado_en | Meta: campaña × día. Google: GA4 `date × sessionGoogleAdsCampaignName` |
+| `campana_dia` | (fecha, canal, campana) | inversion, impresiones, alcance, clics, leads (consultas), intenciones, cotizaciones, actualizado_en | Meta: campaña × día. Google: GA4 `date × sessionGoogleAdsCampaignName` |
 | `sitio_dia` | (fecha) | personas, nuevos, sesiones, interactivas, conversiones, duracion_media | GA4 |
 | `sitio_desglose` | (fecha, tipo, clave) | sesiones, personas, conversiones · tipo ∈ canal, fuente, ciudad, aparato, sistema, pagina, entrada | GA4 |
 | `meta_desglose` | (fecha, tipo, clave) | gasto, conversaciones, contactos · tipo ∈ edad, genero, plataforma, ubicacion, region | Meta breakdowns × día |
@@ -50,7 +50,9 @@ Todas las tablas viven en el esquema `panel`.
 
 Definiciones que no cambian (vienen de la v1 y están validadas contra las plataformas):
 - **Lead en Meta** = conversación de WhatsApp iniciada (`onsite_conversion.messaging_conversation_started_7d`).
-- **Lead en Google** = cotización enviada + reserva pagada + los tres WhatsApp. **Intención** = clics en Cotizar / Reservar.
+- **Tres niveles en Google** (decidido con Felipe el 19-09, al ver que 9 «leads» de Cabañas · Parejas eran 9 clics en el botón de WhatsApp):
+  **intención** = clics en Cotizar / Reservar · **consulta** = los tres eventos de WhatsApp · **cotización** = cotización enviada + reserva pagada.
+  La consulta de Google cuenta el clic, no el mensaje: quien aprieta y no escribe igual suma. En Meta la consulta sí es una conversación real.
 - **Conversiones del sitio** = solo nuestros siete eventos; los heredados del sitio viejo se guardan aparte y no se suman.
 - Clics de Meta = clics al enlace (`inline_link_clicks`), comparables con los de Google.
 
@@ -59,7 +61,7 @@ Definiciones que no cambian (vienen de la v1 y están validadas contra las plata
 | Fuente | Ingesta diaria | Carga inicial (una vez) | Día en curso |
 |---|---|---|---|
 | Meta | 1 (campaña × día) + 5 desgloses = **6/día** | 1 llamada de campaña × día para 20 meses (paginada) + desgloses solo de los últimos 90 días, con pausa de 3 s entre llamadas | máx. 1 por hora |
-| GA4 (sitio + Google Ads) | 3 tandas = **3/día** | 2–3 tandas | máx. 1 cada 30 min |
+| GA4 (sitio + Google Ads) | 3 tandas (Google Ads pide 4 informes en una) = **3/día** | 2–3 tandas | máx. 1 cada 30 min |
 | GA4 tiempo real | — | — | 1 por minuto con la pestaña abierta (ya existe) |
 
 Si una fuente falla, la ingesta guarda el error en `ingesta`, no reintenta en bucle, y la vista

@@ -15,10 +15,14 @@ create table if not exists panel.campana_dia (
   clics          integer     not null default 0,
   leads          integer,                          -- Meta: conversaciones; Google: cotización, reserva o WhatsApp
   intenciones    integer,                          -- solo Google: clics en Cotizar / Reservar
+  cotizaciones   integer,                          -- solo Google: cotización enviada o reserva pagada
   actualizado_en timestamptz not null default now(),
   primary key (fecha, canal, campana)
 );
 create index if not exists campana_dia_fecha on panel.campana_dia (fecha);
+-- Para bases creadas antes del 19-09-2026, cuando leads mezclaba WhatsApp con
+-- cotizaciones y no existía esta columna.
+alter table panel.campana_dia add column if not exists cotizaciones integer;
 
 -- El sitio por día (Analytics).
 create table if not exists panel.sitio_dia (
