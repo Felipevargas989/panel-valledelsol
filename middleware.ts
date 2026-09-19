@@ -15,5 +15,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!entrar|api/entrar|_next/static|_next/image|favicon.ico).*)"],
+  // /api/ingesta queda fuera del candado: la llama el cron de Vercel sin
+  // galleta y se protege sola con CRON_SECRET.
+  matcher: ["/((?!entrar|api/entrar|api/ingesta|_next/static|_next/image|favicon.ico).*)"],
 };

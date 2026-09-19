@@ -1,8 +1,8 @@
 import { Suspense } from "react";
 import FiltroFechas from "../../../components/FiltroFechas";
 import Ahora from "../../../components/Ahora";
-import { BarrasH, LineaDia, MesesAnio, ParDeGraficos, COLOR_ANTERIOR, type FilaBarra } from "../../../components/graficos";
-import { Kpi, Seccion, Tarjeta, Leyenda } from "../../../components/ui";
+import { BarrasH, LineaDia, MesesAnio, ParDeGraficos, type FilaBarra } from "../../../components/graficos";
+import { Kpi, Seccion, Tarjeta } from "../../../components/ui";
 import { datosSitio, visitasPorDia, ga4Conectado, explicarError, type DatosSitio } from "../../../lib/ga4";
 import { baseConectada, sitioDesdeBase, visitasDesdeBase, INICIO_BASE } from "../../../lib/base";
 import {
@@ -129,11 +129,6 @@ export default async function Sitio({
               <LineaDia datos={d.dias.map((x) => ({ fecha: x.fecha, valor: x.sesiones }))}
                         comparar={anio ?? undefined}
                         color="sitio" formato="numero" />
-              {anio ? (
-                <div style={{ marginTop: 10 }}>
-                  <Leyenda items={[["Este período", "var(--sitio)"], ["Hace un año", COLOR_ANTERIOR]]} />
-                </div>
-              ) : null}
             </Tarjeta>
           }
           b={
@@ -152,9 +147,6 @@ export default async function Sitio({
         >
           <Tarjeta nota={notaMeses(meses)}>
             <MesesAnio {...meses} color="sitio" formato="numero" />
-            <div style={{ marginTop: 10 }}>
-              <Leyenda items={[[String(meses.anio), "var(--sitio)"], [String(meses.anio - 1), COLOR_ANTERIOR]]} />
-            </div>
           </Tarjeta>
         </Seccion>
       ) : null}

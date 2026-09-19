@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import FiltroFechas from "../../../components/FiltroFechas";
-import { BarrasDia, LineaDia, MesesAnio, ParDeGraficos, COLOR_ANTERIOR } from "../../../components/graficos";
-import { Kpi, Var, Seccion, Tarjeta, ChipCanal, Leyenda } from "../../../components/ui";
+import { BarrasDia, LineaDia, MesesAnio, ParDeGraficos } from "../../../components/graficos";
+import { Kpi, Var, Seccion, Tarjeta, ChipCanal } from "../../../components/ui";
 import { RANGO_DATOS, ULTIMO_DIA_META, type DiaCampana } from "../../../lib/datos";
 import {
   enRango, resumir, periodoAnterior, variacion, variacionNeutra, serieDiaria, porCampana, porCanal,
@@ -171,13 +171,10 @@ export default async function Conversiones({
 
       <Seccion
         titulo="Inversión día a día"
-        bajada="Cada barra es un día. El naranja es Meta y el azul es Google. Pasa el cursor por encima para ver el detalle."
+        bajada="Cada barra es un día. El naranja es Meta y el azul es Google. Pasa el cursor por encima para ver el detalle; con más de tres semanas aparece abajo una barra para acercar el zoom arrastrando."
       >
         <Tarjeta>
           <BarrasDia datos={gastoDia} formato="plata" />
-          <div style={{ marginTop: 12 }}>
-            <Leyenda items={[["Google Ads", "var(--google)"], ["Meta", "var(--meta)"]]} />
-          </div>
         </Tarjeta>
       </Seccion>
 
@@ -185,7 +182,7 @@ export default async function Conversiones({
         titulo="Cuánta gente vio y cuánta entró"
         bajada={
           hayAnio
-            ? "La línea oscura es este período; la gris punteada, los mismos días de la semana hace un año. Impresiones y clics van en gráficos separados porque tienen tamaños muy distintos."
+            ? "La línea oscura es este período; la gris punteada, los mismos días de la semana hace un año. Pasa el cursor para ver los dos valores y haz clic en la leyenda para apagar una serie. Impresiones y clics van en gráficos separados porque tienen tamaños muy distintos."
             : "Van en dos gráficos separados a propósito: impresiones y clics tienen tamaños muy distintos, y juntarlos obliga a usar dos escalas en un mismo dibujo."
         }
       >
@@ -205,11 +202,6 @@ export default async function Conversiones({
             </Tarjeta>
           }
         />
-        {hayAnio ? (
-          <div style={{ marginTop: 12 }}>
-            <Leyenda items={[["Este período", "var(--tinta)"], ["Hace un año", COLOR_ANTERIOR]]} />
-          </div>
-        ) : null}
       </Seccion>
 
       {conectado ? (
@@ -387,9 +379,6 @@ async function MesAMes({ desde, hasta }: { desde: string; hasta: string }) {
         <Tarjeta titulo="Clics por mes" nota={notaMeses(clicsMes, "clics")}>
           <MesesAnio {...clicsMes} color="total" formato="numero" />
         </Tarjeta>
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <Leyenda items={[[String(imprMes.anio), "var(--tinta)"], [String(imprMes.anio - 1), COLOR_ANTERIOR]]} />
       </div>
     </Seccion>
   );

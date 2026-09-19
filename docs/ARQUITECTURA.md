@@ -90,7 +90,7 @@ zoom por arrastre, encender y apagar series) en vez de SVG dibujado a mano.
 |---|---|---|
 | 1 | Base creada, esquema, ingesta diaria, carga de la historia, registro en Medición | Nada visible todavía; el panel sigue funcionando como hoy |
 | 2 | Las vistas leen de la base; filtros sin recarga; botón «Actualizar hoy» | La página abre al instante y no vuelve a tocar las APIs por mirarla |
-| 3 | Gráficos interactivos, candado (`PANEL_CLAVE`), subdominio `panel.valledelsolquillon.cl` | El dashboard final |
+| 3 | Gráficos interactivos (Recharts: cursor, zoom por arrastre, series que se apagan), candado (`PANEL_CLAVE`), subdominio `panel.valledelsolquillon.cl` | El dashboard final. **Hecho el 19-09**: gráficos y subdominio; el candado queda activo cuando Felipe ponga `PANEL_CLAVE` en Vercel |
 
 ## 9. Lo que NO entra (por ahora)
 
