@@ -7,7 +7,10 @@
 import { neon } from "@neondatabase/serverless";
 import type { DiaCampana } from "./datos";
 
-const url = () => process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? "";
+// Vercel nombra la variable según el prefijo que se elija al conectar la base;
+// se aceptan los nombres habituales para no depender de ese detalle.
+const url = () =>
+  process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.STORAGE_URL ?? process.env.NEON_DATABASE_URL ?? "";
 
 export const baseConectada = () => Boolean(url());
 

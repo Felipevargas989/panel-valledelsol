@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { neon } from "@neondatabase/serverless";
 
 const env = fs.existsSync(".env.local") ? fs.readFileSync(".env.local", "utf8") : "";
-const url = process.env.DATABASE_URL ?? env.match(/^(?:DATABASE_URL|POSTGRES_URL)=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, "");
+const url = process.env.DATABASE_URL ?? env.match(/^(?:DATABASE_URL|POSTGRES_URL|STORAGE_URL|NEON_DATABASE_URL)=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, "");
 if (!url) { console.error("Falta DATABASE_URL en .env.local"); process.exit(1); }
 
 const sql = neon(url);
