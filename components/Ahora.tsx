@@ -16,8 +16,11 @@ export default function Ahora() {
 
   useEffect(() => {
     let vivo = true;
-    async function pedir() {
-      if (document.hidden) return;
+    // La primera consulta va siempre: si la pestaña se abre de fondo y no se
+    // pide nada, la tarjeta se queda en «Consultando Analytics…» para siempre.
+    // Las siguientes sí respetan la visibilidad, para no gastar cuota.
+    async function pedir(forzar = false) {
+      if (document.hidden && !forzar) return;
       try {
         const res = await fetch("/api/ahora", { cache: "no-store" });
         const j: Respuesta = await res.json();
@@ -26,9 +29,9 @@ export default function Ahora() {
         if (vivo) setR({ conectado: true, error: "Sin conexión. Se reintenta en un minuto." });
       }
     }
-    pedir();
-    const cada = setInterval(pedir, 60_000);
-    const alVolver = () => !document.hidden && pedir();
+    pedir(true);
+    const cada = setInterval(() => pedir(), 60_000);
+    const alVolver = () => !document.hidden && pedir(true);
     document.addEventListener("visibilitychange", alVolver);
     return () => {
       vivo = false;
