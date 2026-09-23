@@ -223,7 +223,6 @@ export default async function Conversiones({
             <thead>
               <tr>
                 <th>Campaña</th>
-                <th>Canal</th>
                 <th>Inversión</th>
                 <th>Δ</th>
                 <th>Impresiones</th>
@@ -246,11 +245,11 @@ export default async function Conversiones({
                   <tr key={`${c.canal}|${c.campana}`}>
                     <td>
                       <span style={{ fontWeight: 500 }}>{c.campana}</span>
-                      <div style={{ fontSize: 11.5, color: "var(--tinta3)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 3, fontSize: 11.5, color: "var(--tinta3)" }}>
+                        <ChipCanal canal={c.canal} />
                         {porcentaje(parte, 0)} del gasto
                       </div>
                     </td>
-                    <td style={{ textAlign: "left" }}><ChipCanal canal={c.canal} /></td>
                     <td className="n" style={{ background: tinte(parte, "29,78,216") }}>
                       {plata(c.inversion)}
                     </td>
@@ -272,7 +271,6 @@ export default async function Conversiones({
             <tfoot>
               <tr>
                 <td>Total</td>
-                <td></td>
                 <td className="n">{plata(hoy.inversion)}</td>
                 <td><Var v={variacionNeutra(hoy.inversion, antes.inversion)} /></td>
                 <td className="n">{numero(hoy.impresiones)}</td>
