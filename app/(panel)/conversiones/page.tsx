@@ -6,10 +6,13 @@ import { RANGO_DATOS, ULTIMO_DIA_META, type DiaCampana } from "../../../lib/dato
 import {
   enRango, resumir, periodoAnterior, variacion, variacionNeutra, serieDiaria, porCampana, porCanal,
   plata, numero, porcentaje, sumarDias, fechaLarga, hoyEnChile, NOMBRE_CANAL, haceUnAnio, mesesDelAnio,
+  lineaDe, NOMBRE_LINEA, type Linea, type Variacion,
 } from "../../../lib/calculos";
 import { ga4Conectado, googleAdsDias, explicarError } from "../../../lib/ga4";
 import { metaConectado, metaDias, metaTotalesDia, explicarErrorMeta } from "../../../lib/meta";
-import { baseConectada, leerCampanaDia, serieCampanasDesdeBase, ultimoDiaGuardado, INICIO_BASE } from "../../../lib/base";
+import {
+  baseConectada, leerCampanaDia, serieCampanasDesdeBase, ultimoDiaGuardado, fuentesAlDia, leerGoogleEventos, INICIO_BASE,
+} from "../../../lib/base";
 
 export const dynamic = "force-dynamic";
 // La comparación anual pide año y medio a dos fuentes: 10 segundos no alcanzan.
@@ -56,7 +59,10 @@ async function serieAnual(desde: string, hasta: string) {
   if (baseConectada()) {
     const dias = await serieCampanasDesdeBase(desde, hasta);
     const serie = (campo: "inversion" | "impresiones" | "clics") => dias.map((d) => ({ fecha: d.fecha, valor: d[campo] }));
-    return { serie, faltaMeta: false, faltaGoogle: false };
+    // Si la ingesta de una fuente lleva días fallando, la base queda corta y
+    // los gráficos mostrarían medio gasto sin decirlo.
+    const alDia = await fuentesAlDia(hasta);
+    return { serie, faltaMeta: metaConectado() && !alDia.meta, faltaGoogle: ga4Conectado() && !alDia.google };
   }
   const [meta, google] = await Promise.all([
     metaConectado() ? metaTotalesDia(desde, hasta).catch(() => null) : Promise.resolve(null),
@@ -121,6 +127,24 @@ export default async function Conversiones({
   const campanasAntes = new Map(porCampana(antesDe.filas).map((c) => [`${c.canal}|${c.campana}`, c]));
   const canales = porCanal(filas);
 
+  // Cabañas y eventos por separado: los eventos de Google se leen por campaña
+  // para no mezclar una reserva de cabaña con una cotización de evento.
+  const [eventosAhora, eventosAntes] = conBase
+    ? await Promise.all([leerGoogleEventos(desde, hasta), leerGoogleEventos(previo.desde, previo.hasta)])
+    : [[], []];
+  const lineas = {
+    cabanas: medirLinea("cabanas", filas, eventosAhora),
+    eventos: medirLinea("eventos", filas, eventosAhora),
+  };
+  const lineasAntes = {
+    cabanas: medirLinea("cabanas", antesDe.filas, eventosAntes),
+    eventos: medirLinea("eventos", antesDe.filas, eventosAntes),
+  };
+  const otras = (["marca", "otras"] as const)
+    .map((l) => medirLinea(l, filas, eventosAhora))
+    .filter((m) => m.inversion > 0);
+  const consultasCabanasDia = serieDiaria(filas.filter((f) => lineaDe(f.campana) === "cabanas"), desde, hasta, "leads");
+
   return (
     <div className="pila">
       <Suspense fallback={<div className="filtros" style={{ minHeight: 62 }} />}>
@@ -170,6 +194,35 @@ export default async function Conversiones({
                pie="solo con la inversión de Google" />
         </div>
       </Seccion>
+
+      {conBase ? (
+        <Seccion
+          titulo="Cabañas y eventos, por separado"
+          bajada="Cada línea con su propia meta: en cabañas lo que vale es la reserva pagada; en eventos, la cotización enviada. La campaña se asigna a la línea por su nombre. Las consultas de Meta son conversaciones reales; las de Google, clics en el botón de WhatsApp."
+        >
+          <div className="rejilla dos">
+            <TarjetaLinea m={lineas.cabanas} a={lineasAntes.cabanas} />
+            <TarjetaLinea m={lineas.eventos} a={lineasAntes.eventos} />
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <Tarjeta titulo="Consultas de cabañas por día" extra="WhatsApp · Meta y Google"
+                     nota={notaCabanas(lineas.cabanas)}>
+              <BarrasDia datos={consultasCabanasDia} formato="numero" descripcion="Consultas de cabañas por día, separadas por canal" />
+            </Tarjeta>
+          </div>
+
+          {otras.length ? (
+            <p className="nota" style={{ marginTop: 10 }}>
+              Fuera de las dos líneas:{" "}
+              {otras.map((o) => {
+                const n = o.ventaPropia + o.cruce;
+                return `${NOMBRE_LINEA[o.linea]} ${plata(o.inversion)} (${numero(o.consultas)} ${o.consultas === 1 ? "consulta" : "consultas"}, ${numero(n)} ${n === 1 ? "cotización o reserva" : "cotizaciones o reservas"})`;
+              }).join(" · ")}.
+            </p>
+          ) : null}
+        </Seccion>
+      ) : null}
 
       <Seccion
         titulo="Inversión día a día"
@@ -417,6 +470,107 @@ function varAnio(actual: number, anterior: number) {
   if (!anterior) return "sin datos hace un año";
   const v = (actual - anterior) / anterior;
   return `${v >= 0 ? "▲" : "▼"} ${Math.abs(Math.round(v * 100))} % vs. hace un año`;
+}
+
+// ── Líneas de negocio ────────────────────────────────────────
+type EventoCampana = { campana: string; evento: string; cantidad: number };
+
+/** Lo que cuenta como intención y como venta en cada línea. «Cruce» es la
+ *  venta de la otra línea que llegó por anuncios de esta: una cotización de
+ *  evento que trajo un anuncio de cabañas, por ejemplo. */
+const EVENTOS_LINEA: Record<Linea, { intencion: string[]; venta: string[]; cruce: string[] }> = {
+  cabanas: { intencion: ["cabanas_reservar"], venta: ["cabanas_reserva_pagada"], cruce: ["eventos_cotizacion_enviada"] },
+  eventos: { intencion: ["eventos_cotizar"], venta: ["eventos_cotizacion_enviada"], cruce: ["cabanas_reserva_pagada"] },
+  marca: { intencion: ["cabanas_reservar", "eventos_cotizar"], venta: ["cabanas_reserva_pagada", "eventos_cotizacion_enviada"], cruce: [] },
+  otras: { intencion: ["cabanas_reservar", "eventos_cotizar"], venta: ["cabanas_reserva_pagada", "eventos_cotizacion_enviada"], cruce: [] },
+};
+
+type MedidaLinea = {
+  linea: Linea;
+  inversion: number;
+  inversionGoogle: number;
+  consultasMeta: number;
+  consultasGoogle: number;
+  consultas: number;
+  intencion: number;
+  ventaPropia: number;
+  cruce: number;
+};
+
+function medirLinea(linea: Linea, filas: DiaCampana[], eventos: EventoCampana[]): MedidaLinea {
+  const deLinea = filas.filter((f) => lineaDe(f.campana) === linea);
+  const suma = (xs: DiaCampana[], campo: "inversion" | "leads") => xs.reduce((t, f) => t + (f[campo] ?? 0), 0);
+  const meta = deLinea.filter((f) => f.canal === "meta");
+  const google = deLinea.filter((f) => f.canal === "google");
+  const ev = eventos.filter((e) => lineaDe(e.campana) === linea);
+  const contar = (nombres: string[]) => ev.filter((e) => nombres.includes(e.evento)).reduce((t, e) => t + e.cantidad, 0);
+  const reglas = EVENTOS_LINEA[linea];
+  return {
+    linea,
+    inversion: suma(deLinea, "inversion"),
+    inversionGoogle: suma(google, "inversion"),
+    consultasMeta: suma(meta, "leads"),
+    consultasGoogle: suma(google, "leads"),
+    consultas: suma(deLinea, "leads"),
+    intencion: contar(reglas.intencion),
+    ventaPropia: contar(reglas.venta),
+    cruce: contar(reglas.cruce),
+  };
+}
+
+const div = (a: number, b: number) => (b > 0 ? a / b : NaN);
+
+function TarjetaLinea({ m, a }: { m: MedidaLinea; a: MedidaLinea }) {
+  const esCabanas = m.linea === "cabanas";
+  const venta = esCabanas ? "Reservas pagadas" : "Cotizaciones enviadas";
+  const filas: Array<[string, string, Variacion, string?]> = [
+    ["Inversión", plata(m.inversion), variacionNeutra(m.inversion, a.inversion)],
+    ["Consultas por WhatsApp", numero(m.consultas), variacion(m.consultas, a.consultas),
+     `Meta ${numero(m.consultasMeta)} · Google ${numero(m.consultasGoogle)}`],
+    ["Costo por consulta", plata(div(m.inversion, m.consultas)),
+     variacion(div(m.inversion, m.consultas), div(a.inversion, a.consultas), true)],
+    [esCabanas ? "Apretaron «Reservar»" : "Apretaron «Cotizar»", numero(m.intencion), variacion(m.intencion, a.intencion),
+     "desde anuncios de Google"],
+    [venta, numero(m.ventaPropia), variacion(m.ventaPropia, a.ventaPropia), "desde anuncios de Google"],
+    [esCabanas ? "Costo por reserva" : "Costo por cotización", plata(div(m.inversionGoogle, m.ventaPropia)),
+     variacion(div(m.inversionGoogle, m.ventaPropia), div(a.inversionGoogle, a.ventaPropia), true),
+     "solo con la inversión de Google"],
+  ];
+  return (
+    <Tarjeta titulo={NOMBRE_LINEA[m.linea]}
+             nota={m.cruce > 0
+               ? esCabanas
+                 ? `Además, ${numero(m.cruce)} ${m.cruce === 1 ? "cotización de evento llegó" : "cotizaciones de eventos llegaron"} desde anuncios de cabañas. No suman como reserva.`
+                 : `Además, ${numero(m.cruce)} ${m.cruce === 1 ? "reserva de cabaña llegó" : "reservas de cabañas llegaron"} desde anuncios de eventos.`
+               : undefined}>
+      <div className="barras">
+        {filas.map(([k, v, d, pie]) => (
+          <div key={k} style={{
+            display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12,
+            padding: "7px 0", borderBottom: "1px dotted var(--borde)", fontSize: 13,
+          }}>
+            <span style={{ color: "var(--tinta2)" }}>
+              {k}
+              {pie ? <span style={{ display: "block", fontSize: 11, color: "var(--tinta3)" }}>{pie}</span> : null}
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8 }}>
+              <b style={{ fontFamily: "var(--mono)" }}>{v}</b>
+              <Var v={d} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </Tarjeta>
+  );
+}
+
+/** La respuesta en una frase: ¿los anuncios de cabañas están trayendo algo? */
+function notaCabanas(m: MedidaLinea) {
+  if (!m.inversion) return "En el período no hubo inversión en campañas de cabañas.";
+  const reservas = m.ventaPropia === 0
+    ? "ninguno terminó en una reserva pagada en el sitio"
+    : `${numero(m.ventaPropia)} ${m.ventaPropia === 1 ? "terminó" : "terminaron"} en reserva pagada`;
+  return `Los anuncios de cabañas costaron ${plata(m.inversion)} y trajeron ${numero(m.consultas)} consultas por WhatsApp, a ${plata(div(m.inversion, m.consultas))} cada una. En Google, ${numero(m.intencion)} personas apretaron «Reservar» y ${reservas}. Ojo: las reservas que se cierran conversando por WhatsApp no quedan registradas en ninguna parte medible, así que la cifra real de reservas es mayor o igual a esta.`;
 }
 
 /** Tiñe la celda según su peso dentro del total, como en la tabla de

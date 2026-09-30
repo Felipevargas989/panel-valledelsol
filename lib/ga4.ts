@@ -647,3 +647,31 @@ export async function leerSitioPorDia(desde: string, hasta: string): Promise<Sit
 
   return { dias, desgloses };
 }
+
+/** Nuestros siete eventos por campaña de Google Ads y día. Una llamada. Es lo
+ *  que permite decir si una reserva o una cotización vino de la campaña de
+ *  cabañas o de la de eventos, en vez de sumarlas juntas. */
+export async function leerGoogleEventos(desde: string, hasta: string) {
+  const r = await llamar<Reporte>("runReport", {
+    dateRanges: [{ startDate: desde, endDate: hasta }],
+    dimensions: [{ name: "date" }, { name: "sessionGoogleAdsCampaignName" }, { name: "eventName" }],
+    metrics: [{ name: "keyEvents" }],
+    dimensionFilter: {
+      andGroup: {
+        expressions: [
+          { filter: { fieldName: "eventName", inListFilter: { values: NUESTRAS } } },
+          { notExpression: { filter: { fieldName: "sessionGoogleAdsCampaignName", stringFilter: { value: "(not set)" } } } },
+        ],
+      },
+    },
+    limit: 100000,
+  });
+  return filas(r)
+    .filter((f) => f.m[0] > 0)
+    .map((f) => ({
+      fecha: `${f.d[0].slice(0, 4)}-${f.d[0].slice(4, 6)}-${f.d[0].slice(6, 8)}`,
+      campana: f.d[1],
+      evento: f.d[2],
+      cantidad: f.m[0],
+    }));
+}

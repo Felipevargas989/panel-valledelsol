@@ -233,3 +233,26 @@ export function mesesDelAnio(serie: Array<{ fecha: string; valor: number }>, has
   }
   return { anio, actual, anterior, mesEnCurso: mes - 1, diaEnCurso: dia };
 }
+
+// ── Línea de negocio ─────────────────────────────────────────
+// Cabañas y eventos se miden distinto: en cabañas lo que vale es la reserva
+// pagada; en eventos, la cotización enviada. La línea sale del nombre de la
+// campaña, que en Valle del Sol siempre la dice.
+export type Linea = "cabanas" | "eventos" | "marca" | "otras";
+
+const sinTilde = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+export function lineaDe(campana: string): Linea {
+  const c = sinTilde(campana);
+  if (/caba|parej|piscina|escapada/.test(c)) return "cabanas";
+  if (/marca/.test(c)) return "marca";
+  if (/evento|paseo|matrimon|fin de ano|grupo|corporat|gala|pincel|fiesta/.test(c)) return "eventos";
+  return "otras";
+}
+
+export const NOMBRE_LINEA: Record<Linea, string> = {
+  cabanas: "Cabañas",
+  eventos: "Eventos",
+  marca: "Marca",
+  otras: "Otras campañas",
+};

@@ -358,3 +358,38 @@ export async function fuentesAlDia(hasta: string): Promise<Record<"meta" | "goog
     google: Boolean(ultimo.google && ultimo.google >= limite),
   };
 }
+
+export type EventoGoogle = { fecha: string; campana: string; evento: string; cantidad: number };
+
+/** Guarda los eventos de Google por campaña y día; borra del rango lo que ya
+ *  no se reporta, igual que las campañas. */
+export async function guardarGoogleEventos(filas: EventoGoogle[], limpiar: { desde: string; hasta: string }) {
+  if (!filas.length) return 0;
+  const q = sql();
+  const sello = new Date().toISOString();
+  for (let i = 0; i < filas.length; i += 300) {
+    const tanda = filas.slice(i, i + 300);
+    await q.query(
+      `insert into panel.google_evento_dia (fecha, campana, evento, cantidad, actualizado_en)
+       select * from unnest($1::date[], $2::text[], $3::text[], $4::int[], $5::timestamptz[])
+       on conflict (fecha, campana, evento) do update set
+         cantidad = excluded.cantidad, actualizado_en = excluded.actualizado_en`,
+      [tanda.map((f) => f.fecha), tanda.map((f) => f.campana), tanda.map((f) => f.evento),
+       tanda.map((f) => f.cantidad), tanda.map(() => sello)],
+    );
+  }
+  await q.query(
+    `delete from panel.google_evento_dia where fecha between $1 and $2 and actualizado_en < $3`,
+    [limpiar.desde, limpiar.hasta, sello],
+  );
+  return filas.length;
+}
+
+/** Eventos de Google sumados por campaña en el rango. */
+export async function leerGoogleEventos(desde: string, hasta: string) {
+  return consulta<{ campana: string; evento: string; cantidad: number }>(
+    `select campana, evento, sum(cantidad)::int cantidad from panel.google_evento_dia
+      where fecha between $1 and $2 group by campana, evento`,
+    [desde, hasta],
+  );
+}

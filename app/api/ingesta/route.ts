@@ -16,7 +16,7 @@ export const maxDuration = 60;
  *  error ni a propósito, dispare la paginación completa y queme el cupo. */
 const MAX_DIAS = 400;
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
-const FUENTES: Fuente[] = ["meta", "meta-publico", "google", "sitio"];
+const FUENTES: Fuente[] = ["meta", "meta-publico", "google", "google-eventos", "sitio"];
 
 export async function GET(req: Request) {
   // Sin llave configurada la ruta no corre: es preferible que el cron falle a

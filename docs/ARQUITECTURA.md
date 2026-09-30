@@ -46,6 +46,7 @@ Todas las tablas viven en el esquema `panel`.
 | `sitio_dia` | (fecha) | personas, nuevos, sesiones, interactivas, conversiones, duracion_media | GA4 |
 | `sitio_desglose` | (fecha, tipo, clave) | sesiones, personas, conversiones · tipo ∈ canal, fuente, ciudad, aparato, sistema, pagina, entrada | GA4 |
 | `meta_desglose` | (fecha, tipo, clave) | gasto, conversaciones, contactos · tipo ∈ edad, genero, plataforma, ubicacion, region | Meta breakdowns × día |
+| `google_evento_dia` | (fecha, campana, evento) | cantidad, actualizado_en | GA4 `date × sessionGoogleAdsCampaignName × eventName` (nuestros 7 eventos). Separa cabañas de eventos: desde 30-09 |
 | `ingesta` | id | fuente, desde, hasta, filas, estado, error, inicio, fin | el propio panel |
 
 Definiciones que no cambian (vienen de la v1 y están validadas contra las plataformas):
@@ -57,6 +58,7 @@ Definiciones que no cambian (vienen de la v1 y están validadas contra las plata
 - **Conversiones del sitio** = solo nuestros siete eventos; los heredados del sitio viejo se guardan aparte y no se suman.
 - **Costo por cotización** = solo la inversión de las campañas cuya fuente mide cotizaciones (hoy, Google). Meter el gasto de Meta ahí infla el número: sus campañas van a WhatsApp y nunca registran cotización.
 - Clics de Meta = clics al enlace (`inline_link_clicks`), comparables con los de Google.
+- **Línea de negocio** (30-09, pedido de Felipe: «necesito saber si la campaña de cabañas está surtiendo efecto»): sale del nombre de la campaña (`lineaDe` en `lib/calculos.ts`). Cabañas mide **reservas pagadas**; eventos, **cotizaciones enviadas**. Lo que una campaña trae de la otra línea se muestra aparte como «cruce» y no suma: el 30-09 se vio que las 2 «cotizaciones o reservas» de Cabañas · Parejas eran 2 cotizaciones de eventos.
 
 ## 5. Presupuesto de llamadas (la regla que evita otro bloqueo)
 

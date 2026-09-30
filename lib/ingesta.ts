@@ -1,11 +1,11 @@
 // LA INGESTA COMO FUNCIÓN: la usan el cron (/api/ingesta) y el botón
 // «Actualizar hoy» (/api/actualizar). Ver docs/ARQUITECTURA.md.
 
-import { ga4Conectado, leerGoogleAds, leerSitioPorDia } from "./ga4";
+import { ga4Conectado, leerGoogleAds, leerGoogleEventos, leerSitioPorDia } from "./ga4";
 import { metaConectado, leerMetaDias, leerMetaDesglosesDia } from "./meta";
-import { guardarCampanaDia, guardarDesglose, guardarSitioDia, registrarIngesta } from "./base";
+import { guardarCampanaDia, guardarDesglose, guardarGoogleEventos, guardarSitioDia, registrarIngesta } from "./base";
 
-export type Fuente = "meta" | "meta-publico" | "google" | "sitio";
+export type Fuente = "meta" | "meta-publico" | "google" | "google-eventos" | "sitio";
 
 export async function ingestar(opciones: {
   desde: string;
@@ -13,7 +13,7 @@ export async function ingestar(opciones: {
   fuentes?: Fuente[];
 }) {
   const { desde, hasta } = opciones;
-  const fuentes = new Set<Fuente>(opciones.fuentes ?? ["meta", "meta-publico", "google", "sitio"]);
+  const fuentes = new Set<Fuente>(opciones.fuentes ?? ["meta", "meta-publico", "google", "google-eventos", "sitio"]);
   const resultado: Record<string, unknown> = { desde, hasta };
 
   const correr = async (fuente: Fuente, tarea: () => Promise<number>) => {
@@ -42,6 +42,8 @@ export async function ingestar(opciones: {
   if (ga4Conectado()) {
     await correr("google", async () =>
       guardarCampanaDia(await leerGoogleAds(desde, hasta), { canal: "google", desde, hasta }));
+    await correr("google-eventos", async () =>
+      guardarGoogleEventos(await leerGoogleEventos(desde, hasta), { desde, hasta }));
     await correr("sitio", async () => {
       const s = await leerSitioPorDia(desde, hasta);
       const n = await guardarSitioDia(s.dias);

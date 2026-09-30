@@ -73,3 +73,15 @@ create table if not exists panel.ingesta (
   fin     timestamptz
 );
 create index if not exists ingesta_inicio on panel.ingesta (inicio desc);
+
+-- Eventos clave de Google Ads por campaña y día (19-09 → 30-09-2026). Sirve
+-- para separar cabañas de eventos: la campaña «Cabañas · Parejas» traía
+-- cotizaciones de EVENTOS que el total de campana_dia mezclaba con reservas.
+create table if not exists panel.google_evento_dia (
+  fecha          date        not null,
+  campana        text        not null,
+  evento         text        not null,   -- eventos_cotizar, cabanas_reserva_pagada, ...
+  cantidad       integer     not null default 0,
+  actualizado_en timestamptz not null default now(),
+  primary key (fecha, campana, evento)
+);

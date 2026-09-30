@@ -141,10 +141,13 @@ export function BarrasDia({
   datos,
   formato: nombreFormato,
   alto = 220,
+  descripcion = "Inversión por día, separada por canal",
 }: {
   datos: Array<{ fecha: string; meta: number; google: number; total: number }>;
   formato: NombreFormato;
   alto?: number;
+  /** Lo que lee un lector de pantalla: qué mide el gráfico. */
+  descripcion?: string;
 }) {
   const formato = FORMATO[nombreFormato];
   const { ocultas, alternar } = useOcultas();
@@ -153,7 +156,7 @@ export function BarrasDia({
 
   return (
     <div>
-      <ResponsiveContainer width="100%" height={alto}>
+      <ResponsiveContainer width="100%" height={alto} aria-label={descripcion}>
         <ComposedChart data={datos} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="22%" accessibilityLayer={false}>
           <CartesianGrid {...REJILLA} />
           <XAxis dataKey="fecha" tickFormatter={fechaCorta} tick={EJE} axisLine={{ stroke: "var(--borde2)" }}
